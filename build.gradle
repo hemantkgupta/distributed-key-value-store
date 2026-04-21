@@ -36,6 +36,19 @@ project(':kv-storage-api') {
     }
 }
 
+project(':kv-storage-rocksdb') {
+    dependencies {
+        api project(':kv-storage-api')
+        implementation 'org.rocksdb:rocksdbjni:10.10.1'
+    }
+}
+
+project(':kv-storage-toy-lsm') {
+    dependencies {
+        api project(':kv-storage-api')
+    }
+}
+
 project(':kv-partitioning') {
     dependencies {
         api project(':kv-common')

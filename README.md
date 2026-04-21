@@ -6,7 +6,19 @@ The project target is a Dynamo/Cassandra-style leaderless AP store with tunable 
 
 ## Current Scope
 
-This repository is at checkpoint 1: reviewed architecture skeleton, module boundaries, and docs. Protocol implementation comes next.
+This repository is at checkpoint 2: reviewed architecture skeleton plus Phase 1 durable single-node storage.
+
+Implemented:
+- `StorageEngine` contract.
+- RocksDB-backed storage engine.
+- Stored-record serialization.
+- Tombstone records for deletes.
+- TTL expiry metadata.
+- LWW-style version ordering by timestamp and mutation id.
+- SHA-256 digest support for future digest reads.
+- Unit tests for persistence, tombstones, TTL, late stale mutation handling, and digest changes.
+
+Protocol implementation comes next.
 
 ## Planned Local Runtime
 
@@ -33,8 +45,8 @@ The scaled deployment target is a regional GKE cluster:
 ## Modules
 
 - `kv-common`: shared value types and consistency-level vocabulary.
-- `kv-storage-api`: storage engine boundary.
-- `kv-storage-rocksdb`: production-path local storage implementation.
+- `kv-storage-api`: storage engine boundary and stored-record model.
+- `kv-storage-rocksdb`: production-path local storage implementation using RocksDB.
 - `kv-storage-toy-lsm`: educational LSM implementation for explaining WAL, memtable, SSTable, and compaction.
 - `kv-membership`: gossip, health, and cluster metadata.
 - `kv-partitioning`: token ring, vnodes, and replica placement.

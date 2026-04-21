@@ -10,6 +10,7 @@ public record StoredRecord(
         Optional<Value> value,
         boolean tombstone,
         Instant timestamp,
+        Optional<Instant> expiresAt,
         String mutationId
 ) {
     public StoredRecord {
@@ -23,8 +24,40 @@ public record StoredRecord(
         if (timestamp == null) {
             throw new IllegalArgumentException("timestamp must not be null");
         }
+        expiresAt = expiresAt == null ? Optional.empty() : expiresAt;
         if (mutationId == null || mutationId.isBlank()) {
             throw new IllegalArgumentException("mutation id must not be blank");
         }
+    }
+
+    public static StoredRecord from(MutationRecord mutation) {
+        Optional<Instant> expiresAt = mutation.ttl().map(mutation.timestamp()::plus);
+        return new StoredRecord(
+                mutation.key(),
+                mutation.value(),
+                mutation.tombstone(),
+                mutation.timestamp(),
+                expiresAt,
+                mutation.mutationId()
+        );
+    }
+
+    public boolean isExpiredAt(Instant now) {
+        if (now == null) {
+            throw new IllegalArgumentException("now must not be null");
+        }
+        return expiresAt.map(expiry -> !now.isBefore(expiry)).orElse(false);
+    }
+
+    public boolean isLiveAt(Instant now) {
+        return !tombstone && !isExpiredAt(now);
+    }
+
+    public int compareVersionTo(StoredRecord other) {
+        int timestampCompare = timestamp.compareTo(other.timestamp);
+        if (timestampCompare != 0) {
+            return timestampCompare;
+        }
+        return mutationId.compareTo(other.mutationId);
     }
 }

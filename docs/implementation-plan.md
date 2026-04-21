@@ -1,12 +1,14 @@
 # Implementation Plan
 
-## Phase 1: Durable Single-Node Core
+## Phase 1: Durable Single-Node Core - Done
 
-- Define key, value, mutation, stored-record, and consistency-level types.
-- Implement `StorageEngine` contract.
-- Add RocksDB-backed storage as the primary path.
-- Add tombstone and TTL representation.
-- Add unit tests for put/get/delete/tombstone semantics.
+- Defined key, value, mutation, stored-record, and consistency-level types.
+- Implemented `StorageEngine` contract.
+- Added RocksDB-backed storage as the primary path.
+- Added tombstone and TTL representation.
+- Added SHA-256 digest support for future digest reads.
+- Added LWW-style version ordering by timestamp and mutation id.
+- Added unit tests for put/get/delete/tombstone/TTL/persistence/digest semantics.
 
 ## Phase 2: Partitioning
 
