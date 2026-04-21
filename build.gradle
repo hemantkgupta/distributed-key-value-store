@@ -1,0 +1,70 @@
+allprojects {
+    group = 'com.hkg.distributedkv'
+    version = '0.1.0-SNAPSHOT'
+
+    repositories {
+        mavenCentral()
+    }
+}
+
+subprojects {
+    apply plugin: 'java-library'
+
+    java {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    dependencies {
+        testImplementation platform('org.junit:junit-bom:5.10.2')
+        testImplementation 'org.junit.jupiter:junit-jupiter'
+        testImplementation 'org.assertj:assertj-core:3.25.3'
+        testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+    }
+
+    test {
+        useJUnitPlatform()
+    }
+
+    compileJava.options.encoding = 'UTF-8'
+    compileTestJava.options.encoding = 'UTF-8'
+}
+
+project(':kv-storage-api') {
+    dependencies {
+        api project(':kv-common')
+    }
+}
+
+project(':kv-partitioning') {
+    dependencies {
+        api project(':kv-common')
+    }
+}
+
+project(':kv-replication') {
+    dependencies {
+        api project(':kv-common')
+        api project(':kv-partitioning')
+        api project(':kv-storage-api')
+    }
+}
+
+project(':kv-repair') {
+    dependencies {
+        api project(':kv-common')
+        api project(':kv-partitioning')
+        api project(':kv-storage-api')
+    }
+}
+
+project(':kv-node') {
+    dependencies {
+        implementation project(':kv-common')
+        implementation project(':kv-storage-api')
+        implementation project(':kv-partitioning')
+        implementation project(':kv-replication')
+        implementation project(':kv-repair')
+        implementation project(':kv-membership')
+    }
+}
