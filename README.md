@@ -6,7 +6,7 @@ The project target is a Dynamo/Cassandra-style leaderless AP store with tunable 
 
 ## Current Scope
 
-This repository is at checkpoint 2: reviewed architecture skeleton plus Phase 1 durable single-node storage.
+This repository is at checkpoint 3: durable single-node storage, Phase 2 partitioning, and a bounded Phase 3 in-process write replication primitive.
 
 Implemented:
 - `StorageEngine` contract.
@@ -17,8 +17,13 @@ Implemented:
 - LWW-style version ordering by timestamp and mutation id.
 - SHA-256 digest support for future digest reads.
 - Unit tests for persistence, tombstones, TTL, late stale mutation handling, and digest changes.
+- Deterministic SHA-256 token hashing for keys and vnodes.
+- Immutable ring snapshots with epoch metadata.
+- Clockwise replica placement that skips duplicate physical owners.
+- Consistency wait-policy math for `ONE`, `QUORUM`, `ALL`, `ANY`, and `LOCAL_QUORUM`.
+- Transport-agnostic write replication coordinator that fans out to all planned replicas, captures per-replica failures, and evaluates the requested consistency level.
 
-Protocol implementation comes next.
+Transport, retries, hints, and read reconciliation come next.
 
 ## Planned Local Runtime
 
@@ -49,7 +54,7 @@ The scaled deployment target is a regional GKE cluster:
 - `kv-storage-rocksdb`: production-path local storage implementation using RocksDB.
 - `kv-storage-toy-lsm`: educational LSM implementation for explaining WAL, memtable, SSTable, and compaction.
 - `kv-membership`: gossip, health, and cluster metadata.
-- `kv-partitioning`: token ring, vnodes, and replica placement.
+- `kv-partitioning`: token ring, vnodes, ring epochs, and replica placement.
 - `kv-replication`: coordinator read/write flow and consistency-level wait policies.
 - `kv-repair`: hinted handoff, read repair, Merkle repair, and tombstone safety.
 - `kv-node`: node runtime.

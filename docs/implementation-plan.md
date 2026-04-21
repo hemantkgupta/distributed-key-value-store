@@ -10,18 +10,22 @@
 - Added LWW-style version ordering by timestamp and mutation id.
 - Added unit tests for put/get/delete/tombstone/TTL/persistence/digest semantics.
 
-## Phase 2: Partitioning
+## Phase 2: Partitioning - Done
 
-- Implement token hashing and vnode ownership.
-- Build replica preference lists that select distinct physical nodes.
-- Add ring epoch metadata.
-- Add tests for join, leave, duplicate physical owner filtering, and deterministic placement.
+- Implemented deterministic SHA-256-derived token hashing.
+- Implemented vnode ownership with deterministic vnode tokens per physical node.
+- Built replica preference lists that walk clockwise and select distinct physical nodes.
+- Added ring epoch metadata through immutable `PartitionRingSnapshot`.
+- Added tests for deterministic placement, duplicate physical-owner filtering, wraparound, epoch preservation, invalid inputs, and limited remapping after removal.
 
-## Phase 3: Leaderless Replication
+## Phase 3: Leaderless Replication - In Progress
 
-- Implement coordinator write fanout to all replicas.
-- Add wait policies for `ONE`, `QUORUM`, `ALL`, and `ANY`.
+- Implemented in-process coordinator write fanout to all planned replicas.
+- Added wait-policy math for `ONE`, `QUORUM`, `ALL`, `ANY`, and `LOCAL_QUORUM`.
+- Captured replica writer failures as failed responses so one failed replica does not abort fanout.
 - Add idempotent mutation IDs and retry handling.
+- Add network transport and node-runtime integration.
+- Add durable hints for `ANY` and transient replica failure.
 - Implement read fanout and basic reconciliation.
 
 ## Phase 4: Convergence
