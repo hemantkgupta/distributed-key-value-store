@@ -6,7 +6,7 @@ The project target is a Dynamo/Cassandra-style leaderless AP store with tunable 
 
 ## Current Scope
 
-This repository is at checkpoint 4: durable single-node storage, Phase 2 partitioning, a bounded Phase 3 write replication primitive, and the first durable hinted-handoff store.
+This repository is at checkpoint 5: durable single-node storage, Phase 2 partitioning, bounded Phase 3 write/read replication primitives, and Phase 4 convergence primitives for hinted handoff plus read repair planning.
 
 Implemented:
 - `StorageEngine` contract.
@@ -25,8 +25,11 @@ Implemented:
 - Per-replica retry attempt accounting with configurable max attempts.
 - Local-datacenter-aware `LOCAL_QUORUM` acknowledgement filtering.
 - File-backed hinted-handoff store plus planner for recording failed replica writes as durable hints.
+- Hint replay worker with exponential backoff scheduling and delivery removal.
+- Digest read coordinator that fans reads to planned replicas and identifies digest disagreement.
+- Read repair planner that selects the newest returned record and targets stale successful replicas.
 
-Transport, timeout budgets, hint replay, and read reconciliation come next.
+Transport, timeout budgets, applying read repairs, Merkle repair, and node-runtime integration come next.
 
 ## Planned Local Runtime
 

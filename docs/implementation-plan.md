@@ -21,6 +21,7 @@
 ## Phase 3: Leaderless Replication - In Progress
 
 - Implemented in-process coordinator write fanout to all planned replicas.
+- Implemented digest-read fanout to all planned replicas.
 - Added wait-policy math for `ONE`, `QUORUM`, `ALL`, `ANY`, and `LOCAL_QUORUM`.
 - Captured replica writer failures as failed responses so one failed replica does not abort fanout.
 - Added configurable retry attempts and per-replica attempt accounting.
@@ -28,14 +29,14 @@
 - Mutation records already carry idempotent mutation IDs; retry deduplication across remote nodes remains planned.
 - Add network transport and node-runtime integration.
 - Add timeout budgets.
-- Implement read fanout and basic reconciliation.
+- Apply read repairs through the write path.
 
 ## Phase 4: Convergence - In Progress
 
 - Added file-backed hinted-handoff records and a planner that records failed replica writes as durable hints.
-- Add hint replay worker and backoff scheduling.
-- Add digest reads and mismatch escalation.
-- Add read repair modes.
+- Added hint replay worker with exponential backoff scheduling.
+- Added digest read result analysis and read-repair planning.
+- Add read repair execution modes.
 - Add Merkle tree repair per token range.
 - Add metrics for hint backlog age, repair lag, and dropped hints.
 
