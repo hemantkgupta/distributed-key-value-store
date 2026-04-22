@@ -32,4 +32,10 @@ public record ReplicationResult(
                 .filter(response -> !response.success())
                 .toList();
     }
+
+    public int totalAttempts() {
+        return responses.stream()
+                .mapToInt(ReplicaResponse::attempts)
+                .sum();
+    }
 }

@@ -23,14 +23,17 @@
 - Implemented in-process coordinator write fanout to all planned replicas.
 - Added wait-policy math for `ONE`, `QUORUM`, `ALL`, `ANY`, and `LOCAL_QUORUM`.
 - Captured replica writer failures as failed responses so one failed replica does not abort fanout.
-- Add idempotent mutation IDs and retry handling.
+- Added configurable retry attempts and per-replica attempt accounting.
+- Added local-datacenter-aware acknowledgement filtering for `LOCAL_QUORUM`.
+- Mutation records already carry idempotent mutation IDs; retry deduplication across remote nodes remains planned.
 - Add network transport and node-runtime integration.
-- Add durable hints for `ANY` and transient replica failure.
+- Add timeout budgets.
 - Implement read fanout and basic reconciliation.
 
-## Phase 4: Convergence
+## Phase 4: Convergence - In Progress
 
-- Add durable hinted handoff.
+- Added file-backed hinted-handoff records and a planner that records failed replica writes as durable hints.
+- Add hint replay worker and backoff scheduling.
 - Add digest reads and mismatch escalation.
 - Add read repair modes.
 - Add Merkle tree repair per token range.

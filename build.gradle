@@ -68,6 +68,7 @@ project(':kv-repair') {
         api project(':kv-common')
         api project(':kv-partitioning')
         api project(':kv-storage-api')
+        implementation project(':kv-replication')
     }
 }
 

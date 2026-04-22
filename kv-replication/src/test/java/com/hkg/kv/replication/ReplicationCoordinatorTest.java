@@ -12,6 +12,7 @@ import com.hkg.kv.storage.MutationRecord;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
@@ -115,6 +116,90 @@ class ReplicationCoordinatorTest {
         assertThat(result.consistencySatisfied()).isTrue();
     }
 
+    @Test
+    void retriesReplicaWritesUntilSuccess() {
+        ReplicationPlan plan = plan(ConsistencyLevel.ALL, 3);
+        AtomicInteger attempts = new AtomicInteger();
+        ReplicationCoordinator coordinator = new ReplicationCoordinator((replica, mutation) -> {
+            if (replica.nodeId().equals(plan.replicas().get(1).nodeId()) && attempts.incrementAndGet() == 1) {
+                return failure(replica, "temporary transport failure");
+            }
+            return success(replica);
+        });
+
+        ReplicationResult result = coordinator.replicate(
+                plan,
+                mutation(plan.key()),
+                ReplicationOptions.defaults().withMaxAttempts(2)
+        );
+
+        assertThat(result.consistencySatisfied()).isTrue();
+        assertThat(result.responses().get(1).attempts()).isEqualTo(2);
+        assertThat(result.totalAttempts()).isEqualTo(4);
+    }
+
+    @Test
+    void retriesStopAtConfiguredAttemptLimit() {
+        ReplicationPlan plan = plan(ConsistencyLevel.QUORUM, 3);
+        ReplicationCoordinator coordinator = new ReplicationCoordinator((replica, mutation) ->
+                replica.nodeId().equals(plan.replicas().get(0).nodeId())
+                        ? failure(replica, "still down")
+                        : success(replica));
+
+        ReplicationResult result = coordinator.replicate(
+                plan,
+                mutation(plan.key()),
+                ReplicationOptions.defaults().withMaxAttempts(3)
+        );
+
+        assertThat(result.responses().get(0).attempts()).isEqualTo(3);
+        assertThat(result.totalAttempts()).isEqualTo(5);
+        assertThat(result.consistencySatisfied()).isTrue();
+    }
+
+    @Test
+    void localQuorumCountsOnlyLocalDatacenterAcknowledgements() {
+        ReplicationPlan plan = new ReplicationPlan(
+                Key.utf8("user:1"),
+                List.of(
+                        replica(0, Map.of("datacenter", "us-east1")),
+                        replica(1, Map.of("datacenter", "us-east1")),
+                        replica(2, Map.of("datacenter", "us-west1")),
+                        replica(3, Map.of("datacenter", "us-west1")),
+                        replica(4, Map.of("datacenter", "us-west1"))
+                ),
+                ConsistencyLevel.LOCAL_QUORUM
+        );
+        ReplicationCoordinator coordinator = new ReplicationCoordinator((replica, mutation) ->
+                replica.nodeId().equals(plan.replicas().get(0).nodeId())
+                        ? success(replica)
+                        : failure(replica, "not counted"));
+
+        ReplicationResult result = coordinator.replicate(
+                plan,
+                mutation(plan.key()),
+                ReplicationOptions.defaults().withLocalDatacenter("us-east1")
+        );
+
+        assertThat(result.waitPolicy().acknowledgementsRequired()).isEqualTo(2);
+        assertThat(result.successfulAcknowledgements()).isEqualTo(1);
+        assertThat(result.consistencySatisfied()).isFalse();
+    }
+
+    @Test
+    void rejectsUnknownLocalDatacenter() {
+        ReplicationPlan plan = plan(ConsistencyLevel.LOCAL_QUORUM, 3);
+        ReplicationCoordinator coordinator = new ReplicationCoordinator((replica, mutation) -> success(replica));
+
+        assertThatThrownBy(() -> coordinator.replicate(
+                plan,
+                mutation(plan.key()),
+                ReplicationOptions.defaults().withLocalDatacenter("missing-dc")
+        ))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("local datacenter has no replicas in plan");
+    }
+
     private static ReplicationPlan plan(ConsistencyLevel consistencyLevel, int replicaCount) {
         return new ReplicationPlan(
                 Key.utf8("user:1"),
@@ -126,9 +211,13 @@ class ReplicationCoordinatorTest {
     private static List<ClusterNode> replicas(int replicaCount) {
         List<ClusterNode> replicas = new ArrayList<>(replicaCount);
         for (int index = 0; index < replicaCount; index++) {
-            replicas.add(new ClusterNode(new NodeId("node-" + index), "host-" + index, 8080 + index, java.util.Map.of()));
+            replicas.add(replica(index, Map.of()));
         }
         return replicas;
+    }
+
+    private static ClusterNode replica(int index, Map<String, String> labels) {
+        return new ClusterNode(new NodeId("node-" + index), "host-" + index, 8080 + index, labels);
     }
 
     private static MutationRecord mutation(Key key) {
