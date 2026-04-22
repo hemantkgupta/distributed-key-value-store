@@ -2,6 +2,7 @@ package com.hkg.kv.storage;
 
 import com.hkg.kv.common.Key;
 import com.hkg.kv.common.Value;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Optional;
 
@@ -25,6 +26,9 @@ public record StoredRecord(
             throw new IllegalArgumentException("timestamp must not be null");
         }
         expiresAt = expiresAt == null ? Optional.empty() : expiresAt;
+        if (expiresAt.isPresent() && expiresAt.get().isBefore(timestamp)) {
+            throw new IllegalArgumentException("expiry must not be before timestamp");
+        }
         if (mutationId == null || mutationId.isBlank()) {
             throw new IllegalArgumentException("mutation id must not be blank");
         }
@@ -51,6 +55,11 @@ public record StoredRecord(
 
     public boolean isLiveAt(Instant now) {
         return !tombstone && !isExpiredAt(now);
+    }
+
+    public MutationRecord toMutationRecord() {
+        Optional<Duration> ttl = expiresAt.map(expiry -> Duration.between(timestamp, expiry));
+        return new MutationRecord(key, value, tombstone, timestamp, ttl, mutationId);
     }
 
     public int compareVersionTo(StoredRecord other) {

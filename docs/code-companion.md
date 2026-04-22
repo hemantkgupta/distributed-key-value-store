@@ -9,10 +9,10 @@ This file maps the future Complete Engineering Guide sections to code locations.
 | Foundation: token ring and vnodes | `kv-partitioning` | Implemented |
 | Foundation: write/read path | `kv-replication` | In-process write fanout, retries, local-quorum filtering, and digest-read fanout implemented |
 | Going Deeper: hinted handoff | `kv-repair` | Durable hint store, failed-write planner, and replay/backoff worker implemented |
-| Going Deeper: digest reads and read repair | `kv-storage-api`, `kv-storage-rocksdb`, `kv-replication`, `kv-repair` | Digest read result analysis and read-repair planning implemented; repair execution planned |
+| Going Deeper: digest reads and read repair | `kv-storage-api`, `kv-storage-rocksdb`, `kv-replication`, `kv-repair` | Digest read result analysis, read-repair planning, and write-boundary execution implemented |
 | Going Deeper: Merkle anti-entropy | `kv-repair` | Planned |
 | Going Deeper: tombstones and TTL | `kv-storage-api`, `kv-storage-rocksdb` | Implemented as stored-record metadata |
-| At Scale: compaction debt | `kv-storage-rocksdb`, `kv-storage-toy-lsm`, `kv-bench` | RocksDB dependency in place; metrics planned |
+| At Scale: compaction debt | `kv-storage-rocksdb`, `kv-storage-toy-lsm`, `kv-bench` | RocksDB dependency in place; storage metrics planned |
 | At Scale: deterministic simulation | `kv-simulator` | Planned |
 | At Scale: local 5-node ring | `deploy/compose` | Planned |
 | At Scale: GCP deployment | `deploy/gke` | Planned |
@@ -25,6 +25,7 @@ When the guide claims a mechanism exists, this companion must point to the file 
 
 - `kv-storage-api/src/main/java/com/hkg/kv/storage/StorageEngine.java` defines `apply`, `get`, `digest`, and `close`.
 - `kv-storage-api/src/main/java/com/hkg/kv/storage/StoredRecord.java` carries tombstone, timestamp, expiry, mutation id, and version-ordering behavior.
+- `kv-storage-api/src/main/java/com/hkg/kv/storage/StoredRecord.java` also converts stored records back to `MutationRecord` for read repair without losing tombstone or TTL metadata.
 - `kv-storage-rocksdb/src/main/java/com/hkg/kv/storage/rocksdb/RocksDbStorageEngine.java` persists records in RocksDB and ignores older late-arriving mutations.
 - `kv-storage-rocksdb/src/main/java/com/hkg/kv/storage/rocksdb/StoredRecordCodec.java` serializes stored records.
 - `kv-storage-rocksdb/src/test/java/com/hkg/kv/storage/rocksdb/RocksDbStorageEngineTest.java` verifies persistence, tombstones, TTL metadata, stale mutation protection, and digest changes.
@@ -61,7 +62,11 @@ When the guide claims a mechanism exists, this companion must point to the file 
 - `kv-repair/src/main/java/com/hkg/kv/repair/HintReplayPolicy.java` computes retry backoff for failed hint replay attempts.
 - `kv-repair/src/main/java/com/hkg/kv/repair/HintReplayWorker.java` replays due hints, deletes delivered hints, and reschedules failed hints.
 - `kv-repair/src/main/java/com/hkg/kv/repair/ReadRepairPlanner.java` selects the newest successful read record and targets stale successful replicas for repair.
+- `kv-repair/src/main/java/com/hkg/kv/repair/ReadRepairExecutor.java` applies a read-repair plan by writing the latest returned record to stale target replicas through `ReplicaWriter`.
+- `kv-repair/src/main/java/com/hkg/kv/repair/ConvergenceMetricsCollector.java` snapshots pending hint backlog shape, hint replay outcomes, and read repair outcomes.
 - `kv-repair/src/test/java/com/hkg/kv/repair/FileHintStoreTest.java` verifies persistence across instances, delivery removal, and failed-attempt metadata replacement.
 - `kv-repair/src/test/java/com/hkg/kv/repair/HintedHandoffPlannerTest.java` verifies failed replica hint creation and rejects responses outside the replication plan.
 - `kv-repair/src/test/java/com/hkg/kv/repair/HintReplayWorkerTest.java` verifies delivered hint deletion, failed hint rescheduling, not-due skipping, and delivery exception handling.
 - `kv-repair/src/test/java/com/hkg/kv/repair/ReadRepairPlannerTest.java` verifies empty repair plans, stale target selection, tombstone-as-latest behavior, and no-record handling.
+- `kv-repair/src/test/java/com/hkg/kv/repair/ReadRepairExecutorTest.java` verifies successful repair writes, missing target handling, and exception capture.
+- `kv-repair/src/test/java/com/hkg/kv/repair/ConvergenceMetricsCollectorTest.java` verifies hint backlog shape plus replay/read-repair outcome counters.

@@ -29,16 +29,15 @@
 - Mutation records already carry idempotent mutation IDs; retry deduplication across remote nodes remains planned.
 - Add network transport and node-runtime integration.
 - Add timeout budgets.
-- Apply read repairs through the write path.
 
 ## Phase 4: Convergence - In Progress
 
 - Added file-backed hinted-handoff records and a planner that records failed replica writes as durable hints.
 - Added hint replay worker with exponential backoff scheduling.
-- Added digest read result analysis and read-repair planning.
-- Add read repair execution modes.
+- Added digest read result analysis, read-repair planning, and read-repair execution through the write boundary.
+- Added convergence metrics snapshots for hint backlog, hint replay outcomes, and read repair outcomes.
 - Add Merkle tree repair per token range.
-- Add metrics for hint backlog age, repair lag, and dropped hints.
+- Add metrics export, alerting, and repair lag/dropped-hint counters.
 
 ## Phase 5: Topology Change
 

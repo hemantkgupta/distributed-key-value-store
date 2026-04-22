@@ -1,6 +1,7 @@
 package com.hkg.kv.storage;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.hkg.kv.common.Key;
 import com.hkg.kv.common.Value;
@@ -40,6 +41,46 @@ class StoredRecordTest {
         assertThat(newerTimestamp.compareVersionTo(older)).isPositive();
         assertThat(newerTieBreaker.compareVersionTo(older)).isPositive();
         assertThat(older.compareVersionTo(newerTimestamp)).isNegative();
+    }
+
+    @Test
+    void convertsStoredRecordBackToMutationRecordForRepair() {
+        Key key = Key.utf8("k");
+        Instant timestamp = Instant.parse("2026-04-21T10:00:00Z");
+        StoredRecord storedRecord = new StoredRecord(
+                key,
+                Optional.of(new Value(new byte[] {1})),
+                false,
+                timestamp,
+                Optional.of(timestamp.plusSeconds(30)),
+                "m1"
+        );
+
+        MutationRecord mutation = storedRecord.toMutationRecord();
+
+        assertThat(mutation.key()).isEqualTo(key);
+        assertThat(mutation.value()).isEqualTo(storedRecord.value());
+        assertThat(mutation.tombstone()).isFalse();
+        assertThat(mutation.timestamp()).isEqualTo(timestamp);
+        assertThat(mutation.ttl()).contains(Duration.ofSeconds(30));
+        assertThat(mutation.mutationId()).isEqualTo("m1");
+    }
+
+    @Test
+    void rejectsExpiryBeforeTimestamp() {
+        Key key = Key.utf8("k");
+        Instant timestamp = Instant.parse("2026-04-21T10:00:00Z");
+
+        assertThatThrownBy(() -> new StoredRecord(
+                key,
+                Optional.of(new Value(new byte[] {1})),
+                false,
+                timestamp,
+                Optional.of(timestamp.minusMillis(1)),
+                "m1"
+        ))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("expiry must not be before timestamp");
     }
 
     private static StoredRecord record(Key key, Instant timestamp, String mutationId) {
