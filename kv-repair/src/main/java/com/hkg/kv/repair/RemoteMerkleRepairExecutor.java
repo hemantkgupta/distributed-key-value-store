@@ -1,41 +1,50 @@
 package com.hkg.kv.repair;
 
-import com.hkg.kv.storage.StorageEngine;
+import com.hkg.kv.partitioning.ClusterNode;
+import com.hkg.kv.partitioning.KeyTokenHasher;
+import com.hkg.kv.partitioning.TokenRange;
+import com.hkg.kv.replication.ReplicaResponse;
+import com.hkg.kv.replication.ReplicaWriter;
 import com.hkg.kv.storage.StoredRecord;
+import java.util.ArrayList;
 import java.util.List;
 
-public final class MerkleRepairExecutor {
-    private final MerkleRangeScanner rangeScanner;
+public final class RemoteMerkleRepairExecutor {
+    private final MerkleRangeStreamer rangeStreamer;
+    private final ReplicaWriter replicaWriter;
 
-    public MerkleRepairExecutor(MerkleRangeScanner rangeScanner) {
-        if (rangeScanner == null) {
-            throw new IllegalArgumentException("range scanner must not be null");
+    public RemoteMerkleRepairExecutor(MerkleRangeStreamer rangeStreamer, ReplicaWriter replicaWriter) {
+        if (rangeStreamer == null) {
+            throw new IllegalArgumentException("range streamer must not be null");
         }
-        this.rangeScanner = rangeScanner;
+        if (replicaWriter == null) {
+            throw new IllegalArgumentException("replica writer must not be null");
+        }
+        this.rangeStreamer = rangeStreamer;
+        this.replicaWriter = replicaWriter;
     }
 
-    public MerkleRepairExecutor() {
-        this(new MerkleRangeScanner());
-    }
-
-    public MerkleRepairResult execute(MerkleRepairPlan plan, StorageEngine left, StorageEngine right) {
-        return execute(plan, left, right, MerkleRepairBudget.unbounded());
+    public MerkleRepairResult execute(MerkleRepairPlan plan, ClusterNode leftReplica, ClusterNode rightReplica) {
+        return execute(plan, leftReplica, rightReplica, MerkleRepairBudget.unbounded());
     }
 
     public MerkleRepairResult execute(
             MerkleRepairPlan plan,
-            StorageEngine left,
-            StorageEngine right,
+            ClusterNode leftReplica,
+            ClusterNode rightReplica,
             MerkleRepairBudget budget
     ) {
         if (plan == null) {
             throw new IllegalArgumentException("Merkle repair plan must not be null");
         }
-        if (left == null) {
-            throw new IllegalArgumentException("left storage must not be null");
+        if (leftReplica == null) {
+            throw new IllegalArgumentException("left replica must not be null");
         }
-        if (right == null) {
-            throw new IllegalArgumentException("right storage must not be null");
+        if (rightReplica == null) {
+            throw new IllegalArgumentException("right replica must not be null");
+        }
+        if (leftReplica.nodeId().equals(rightReplica.nodeId())) {
+            throw new IllegalArgumentException("Merkle repair replicas must be distinct");
         }
         if (budget == null) {
             throw new IllegalArgumentException("Merkle repair budget must not be null");
@@ -66,8 +75,8 @@ public final class MerkleRepairExecutor {
                 break;
             }
 
-            List<StoredRecord> leftRecords = rangeScanner.recordsInRange(left, difference.range());
-            List<StoredRecord> rightRecords = rangeScanner.recordsInRange(right, difference.range());
+            List<StoredRecord> leftRecords = streamRecords(leftReplica, difference.range());
+            List<StoredRecord> rightRecords = streamRecords(rightReplica, difference.range());
             int rangeScannedRecords = leftRecords.size() + rightRecords.size();
             if (!budget.canScan(scannedLeftRecords + scannedRightRecords, rangeScannedRecords)) {
                 stoppedByBudget = true;
@@ -91,12 +100,12 @@ public final class MerkleRepairExecutor {
                     new MerkleRepairRangeReconciler.RepairWriter() {
                         @Override
                         public boolean applyToLeft(StoredRecord record) {
-                            return apply(left, record);
+                            return writeRepair(leftReplica, record);
                         }
 
                         @Override
                         public boolean applyToRight(StoredRecord record) {
-                            return apply(right, record);
+                            return writeRepair(rightReplica, record);
                         }
                     }
             );
@@ -124,10 +133,29 @@ public final class MerkleRepairExecutor {
         );
     }
 
-    private static boolean apply(StorageEngine storage, StoredRecord record) {
+    private List<StoredRecord> streamRecords(ClusterNode replica, TokenRange range) {
+        List<StoredRecord> records = rangeStreamer.stream(replica, range);
+        if (records == null) {
+            throw new IllegalStateException("range streamer returned null records");
+        }
+
+        ArrayList<StoredRecord> validated = new ArrayList<>(records.size());
+        for (StoredRecord record : records) {
+            if (record == null) {
+                throw new IllegalStateException("range streamer returned a null record");
+            }
+            if (!range.contains(KeyTokenHasher.tokenFor(record.key()))) {
+                throw new IllegalStateException("range streamer returned a record outside the requested range");
+            }
+            validated.add(record);
+        }
+        return List.copyOf(validated);
+    }
+
+    private boolean writeRepair(ClusterNode replica, StoredRecord record) {
         try {
-            storage.apply(record.toMutationRecord());
-            return true;
+            ReplicaResponse response = replicaWriter.write(replica, record.toMutationRecord());
+            return response != null && response.success() && replica.nodeId().equals(response.nodeId());
         } catch (RuntimeException exception) {
             return false;
         }
