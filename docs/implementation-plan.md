@@ -42,7 +42,8 @@
 - Added storage-backed Merkle range scanning and local two-replica repair execution for missing/stale records.
 - Added repair backpressure budgets for max ranges, max scanned records, and max write attempts per run.
 - Added dependency-free convergence metric samples and exporter boundary for hints, read repair, Merkle repair, and budget stops.
-- Add remote range streaming and distributed repair scheduling for Merkle differences.
+- Added deterministic Merkle repair scheduling for due replica-pair range tasks, task-per-tick limits, clean/incomplete rescheduling, missing-replica handling, failed-task isolation, and aggregate repair summaries.
+- Add remote range streaming and distributed lease/worker coordination for Merkle differences.
 - Add Micrometer/Prometheus binding, alerting, and repair lag/dropped-hint counters.
 
 ## Phase 5: Topology Change

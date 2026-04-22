@@ -10,7 +10,7 @@ This file maps the future Complete Engineering Guide sections to code locations.
 | Foundation: write/read path | `kv-replication` | In-process write fanout, retries, local-quorum filtering, and digest-read fanout implemented |
 | Going Deeper: hinted handoff | `kv-repair` | Durable hint store, failed-write planner, replay/backoff worker, and metrics counters implemented |
 | Going Deeper: digest reads and read repair | `kv-storage-api`, `kv-storage-rocksdb`, `kv-replication`, `kv-repair` | Digest read result analysis, read-repair planning, write-boundary execution, and metrics counters implemented |
-| Going Deeper: Merkle anti-entropy | `kv-storage-api`, `kv-storage-rocksdb`, `kv-partitioning`, `kv-repair` | Storage-backed tree construction, differing-range planning, local repair execution, per-run backpressure budgets, and metric samples implemented; remote streaming/scheduling planned |
+| Going Deeper: Merkle anti-entropy | `kv-storage-api`, `kv-storage-rocksdb`, `kv-partitioning`, `kv-repair` | Storage-backed tree construction, differing-range planning, local repair execution, per-run backpressure budgets, deterministic due-task scheduling, and metric samples implemented; remote streaming/distributed leases planned |
 | Going Deeper: tombstones and TTL | `kv-storage-api`, `kv-storage-rocksdb` | Implemented as stored-record metadata |
 | At Scale: compaction debt | `kv-storage-rocksdb`, `kv-storage-toy-lsm`, `kv-bench` | RocksDB dependency in place; storage metrics planned |
 | At Scale: deterministic simulation | `kv-simulator` | Planned |
@@ -76,6 +76,11 @@ When the guide claims a mechanism exists, this companion must point to the file 
 - `kv-repair/src/main/java/com/hkg/kv/repair/MerkleRepairBudget.java` caps max ranges, scanned records, and write attempts in one repair run.
 - `kv-repair/src/main/java/com/hkg/kv/repair/MerkleRepairExecutor.java` applies a repair plan locally by scanning differing ranges and writing the latest record or tombstone to the stale side.
 - `kv-repair/src/main/java/com/hkg/kv/repair/MerkleRepairResult.java` reports scanned records, applied writes, failed writes, already-converged keys, skipped ranges, and budget stops.
+- `kv-repair/src/main/java/com/hkg/kv/repair/MerkleRepairTask.java` models a scheduled replica-pair token-range repair task with next-run time and incomplete-run backoff state.
+- `kv-repair/src/main/java/com/hkg/kv/repair/MerkleRepairSchedulePolicy.java` computes clean-run cadence and bounded exponential backoff for incomplete repair runs.
+- `kv-repair/src/main/java/com/hkg/kv/repair/MerkleRepairScheduleBudget.java` caps how many due repair tasks a scheduler tick can attempt and passes a per-task Merkle repair budget to the executor.
+- `kv-repair/src/main/java/com/hkg/kv/repair/MerkleRepairScheduler.java` runs due repair tasks against local storage handles, builds current Merkle trees, plans differences, executes bounded local repair, isolates failed tasks, and reschedules each task.
+- `kv-repair/src/main/java/com/hkg/kv/repair/MerkleRepairScheduleSummary.java` reports per-task statuses, next tasks, aggregate repair results, and budget-stop counts.
 - `kv-repair/src/test/java/com/hkg/kv/repair/FileHintStoreTest.java` verifies persistence across instances, delivery removal, and failed-attempt metadata replacement.
 - `kv-repair/src/test/java/com/hkg/kv/repair/HintedHandoffPlannerTest.java` verifies failed replica hint creation and rejects responses outside the replication plan.
 - `kv-repair/src/test/java/com/hkg/kv/repair/HintReplayWorkerTest.java` verifies delivered hint deletion, failed hint rescheduling, not-due skipping, and delivery exception handling.
@@ -86,3 +91,4 @@ When the guide claims a mechanism exists, this companion must point to the file 
 - `kv-repair/src/test/java/com/hkg/kv/repair/MerkleRepairPlannerTest.java` verifies no-op matching trees, changed digest detection, missing-record detection, and range validation.
 - `kv-repair/src/test/java/com/hkg/kv/repair/MerkleRangeScannerTest.java` verifies storage-backed tree construction and deterministic scan ordering.
 - `kv-repair/src/test/java/com/hkg/kv/repair/MerkleRepairExecutorTest.java` verifies missing-record repair, stale-version repair, tombstone repair, no-op plans, failed write accounting, equal-version divergence handling, and range/scan/write budget stops.
+- `kv-repair/src/test/java/com/hkg/kv/repair/MerkleRepairSchedulerTest.java` verifies due repair execution, clean/incomplete rescheduling, task-per-tick deferral, missing-replica backoff, failed-task isolation, and aggregate repair summaries.
