@@ -8,10 +8,13 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 import org.rocksdb.Options;
 import org.rocksdb.RocksDB;
 import org.rocksdb.RocksDBException;
+import org.rocksdb.RocksIterator;
 
 public final class RocksDbStorageEngine implements StorageEngine {
     static {
@@ -62,6 +65,20 @@ public final class RocksDbStorageEngine implements StorageEngine {
             return Optional.of(StoredRecordCodec.decode(encoded));
         } catch (RocksDBException exception) {
             throw new StorageEngineException("failed to read key " + key, exception);
+        }
+    }
+
+    @Override
+    public List<StoredRecord> scanAll() {
+        ArrayList<StoredRecord> records = new ArrayList<>();
+        try (RocksIterator iterator = db.newIterator()) {
+            for (iterator.seekToFirst(); iterator.isValid(); iterator.next()) {
+                records.add(StoredRecordCodec.decode(iterator.value()));
+            }
+            iterator.status();
+            return List.copyOf(records);
+        } catch (RocksDBException exception) {
+            throw new StorageEngineException("failed to scan RocksDB records", exception);
         }
     }
 

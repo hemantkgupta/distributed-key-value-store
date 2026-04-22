@@ -105,6 +105,26 @@ class RocksDbStorageEngineTest {
         }
     }
 
+    @Test
+    void scansAllStoredRecordsIncludingTombstones() {
+        Instant timestamp = Instant.parse("2026-04-21T10:00:00Z");
+
+        try (RocksDbStorageEngine storage = RocksDbStorageEngine.open(tempDir)) {
+            storage.apply(put(Key.utf8("cart:1"), "v1", timestamp, "m1"));
+            storage.apply(put(Key.utf8("cart:2"), "v2", timestamp.plusSeconds(1), "m2"));
+            storage.apply(delete(Key.utf8("cart:3"), timestamp.plusSeconds(2), "m3"));
+
+            assertThat(storage.scanAll())
+                    .extracting(record -> record.key().toString())
+                    .containsExactlyInAnyOrder("cart:1", "cart:2", "cart:3");
+            assertThat(storage.scanAll())
+                    .filteredOn(StoredRecord::tombstone)
+                    .singleElement()
+                    .extracting(record -> record.key().toString())
+                    .isEqualTo("cart:3");
+        }
+    }
+
     private static MutationRecord put(Key key, String value, Instant timestamp, String mutationId) {
         return new MutationRecord(
                 key,

@@ -3,7 +3,7 @@
 ## Phase 1: Durable Single-Node Core - Done
 
 - Defined key, value, mutation, stored-record, and consistency-level types.
-- Implemented `StorageEngine` contract.
+- Implemented `StorageEngine` contract with point reads, digest reads, and full local record scans for repair jobs.
 - Added RocksDB-backed storage as the primary path.
 - Added tombstone and TTL representation.
 - Added SHA-256 digest support for future digest reads.
@@ -39,7 +39,8 @@
 - Added convergence metrics snapshots for hint backlog, hint replay outcomes, and read repair outcomes.
 - Added deterministic Merkle tree construction over token-range record digests.
 - Added Merkle repair planning that compares replica trees and returns differing leaf ranges.
-- Add range scan/streaming and repair execution for Merkle differences.
+- Added storage-backed Merkle range scanning and local two-replica repair execution for missing/stale records.
+- Add remote range streaming, throttling/backpressure, and repair scheduling for Merkle differences.
 - Add metrics export, alerting, and repair lag/dropped-hint counters.
 
 ## Phase 5: Topology Change
