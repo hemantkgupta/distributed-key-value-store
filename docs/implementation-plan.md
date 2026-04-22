@@ -40,7 +40,8 @@
 - Added deterministic Merkle tree construction over token-range record digests.
 - Added Merkle repair planning that compares replica trees and returns differing leaf ranges.
 - Added storage-backed Merkle range scanning and local two-replica repair execution for missing/stale records.
-- Add remote range streaming, throttling/backpressure, and repair scheduling for Merkle differences.
+- Added repair backpressure budgets for max ranges, max scanned records, and max write attempts per run.
+- Add remote range streaming and distributed repair scheduling for Merkle differences.
 - Add metrics export, alerting, and repair lag/dropped-hint counters.
 
 ## Phase 5: Topology Change

@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.hkg.kv.common.Key;
 import com.hkg.kv.common.Value;
+import com.hkg.kv.partitioning.KeyTokenHasher;
 import com.hkg.kv.partitioning.TokenRange;
 import com.hkg.kv.storage.MutationRecord;
 import com.hkg.kv.storage.StorageEngine;
@@ -109,11 +110,99 @@ class MerkleRepairExecutorTest {
         assertThat(result.fullyApplied()).isFalse();
     }
 
+    @Test
+    void stopsAfterRangeBudgetIsExhausted() {
+        List<TokenRange> ranges = RANGE.split();
+        Key firstKey = keyInRange(ranges.get(0), "range-a");
+        Key secondKey = keyInRange(ranges.get(1), "range-b");
+        InMemoryStorage left = new InMemoryStorage();
+        InMemoryStorage right = new InMemoryStorage();
+        left.apply(put(firstKey, "first", 1));
+        left.apply(put(secondKey, "second", 2));
+
+        MerkleRepairResult result = new MerkleRepairExecutor().execute(
+                manualPlan(List.of(
+                        difference(ranges.get(0), 1, 0),
+                        difference(ranges.get(1), 1, 0)
+                )),
+                left,
+                right,
+                new MerkleRepairBudget(1, 10, 10)
+        );
+
+        assertThat(result.appliedToRight()).isEqualTo(1);
+        assertThat(result.skippedRanges()).isEqualTo(1);
+        assertThat(result.stoppedByBudget()).isTrue();
+        assertThat(right.get(firstKey)).isPresent();
+        assertThat(right.get(secondKey)).isEmpty();
+    }
+
+    @Test
+    void stopsBeforeScanningRangeWhenRecordBudgetWouldBeExceeded() {
+        Key firstKey = Key.utf8("user:1");
+        Key secondKey = Key.utf8("user:2");
+        InMemoryStorage left = new InMemoryStorage();
+        InMemoryStorage right = new InMemoryStorage();
+        left.apply(put(firstKey, "first", 1));
+        left.apply(put(secondKey, "second", 2));
+
+        MerkleRepairResult result = new MerkleRepairExecutor().execute(
+                manualPlan(List.of(difference(RANGE, 2, 0))),
+                left,
+                right,
+                new MerkleRepairBudget(10, 1, 10)
+        );
+
+        assertThat(result.scannedLeftRecords()).isZero();
+        assertThat(result.appliedToRight()).isZero();
+        assertThat(result.skippedRanges()).isEqualTo(1);
+        assertThat(result.stoppedByBudget()).isTrue();
+    }
+
+    @Test
+    void stopsWithinRangeWhenWriteBudgetIsExhausted() {
+        InMemoryStorage left = new InMemoryStorage();
+        InMemoryStorage right = new InMemoryStorage();
+        left.apply(put(Key.utf8("user:1"), "first", 1));
+        left.apply(put(Key.utf8("user:2"), "second", 2));
+
+        MerkleRepairResult result = new MerkleRepairExecutor().execute(
+                manualPlan(List.of(difference(RANGE, 2, 0))),
+                left,
+                right,
+                new MerkleRepairBudget(10, 10, 1)
+        );
+
+        assertThat(result.successfulWrites()).isEqualTo(1);
+        assertThat(result.skippedRanges()).isEqualTo(1);
+        assertThat(result.stoppedByBudget()).isTrue();
+        assertThat(result.fullyApplied()).isFalse();
+        assertThat(right.scanAll()).hasSize(1);
+    }
+
     private static MerkleRepairPlan plan(StorageEngine left, StorageEngine right) {
         MerkleRangeScanner scanner = new MerkleRangeScanner();
         MerkleTree leftTree = scanner.treeFor(left, RANGE, 4);
         MerkleTree rightTree = scanner.treeFor(right, RANGE, 4);
         return new MerkleRepairPlanner().plan(leftTree, rightTree);
+    }
+
+    private static MerkleRepairPlan manualPlan(List<MerkleDifference> differences) {
+        return new MerkleRepairPlan(RANGE, differences);
+    }
+
+    private static MerkleDifference difference(TokenRange range, int leftRecordCount, int rightRecordCount) {
+        return new MerkleDifference(range, leftRecordCount, rightRecordCount, new byte[] {1}, new byte[] {2});
+    }
+
+    private static Key keyInRange(TokenRange range, String prefix) {
+        for (int index = 0; index < 10_000; index++) {
+            Key key = Key.utf8(prefix + ":" + index);
+            if (range.contains(KeyTokenHasher.tokenFor(key))) {
+                return key;
+            }
+        }
+        throw new IllegalStateException("unable to find key in range");
     }
 
     private static MutationRecord put(Key key, String value, int version) {

@@ -23,6 +23,15 @@ public final class MerkleRepairExecutor {
     }
 
     public MerkleRepairResult execute(MerkleRepairPlan plan, StorageEngine left, StorageEngine right) {
+        return execute(plan, left, right, MerkleRepairBudget.unbounded());
+    }
+
+    public MerkleRepairResult execute(
+            MerkleRepairPlan plan,
+            StorageEngine left,
+            StorageEngine right,
+            MerkleRepairBudget budget
+    ) {
         if (plan == null) {
             throw new IllegalArgumentException("Merkle repair plan must not be null");
         }
@@ -31,6 +40,9 @@ public final class MerkleRepairExecutor {
         }
         if (right == null) {
             throw new IllegalArgumentException("right storage must not be null");
+        }
+        if (budget == null) {
+            throw new IllegalArgumentException("Merkle repair budget must not be null");
         }
         if (!plan.requiresRepair()) {
             return MerkleRepairResult.empty();
@@ -42,18 +54,45 @@ public final class MerkleRepairExecutor {
         int appliedToRight = 0;
         int failedWrites = 0;
         int alreadyConvergedKeys = 0;
+        int processedRanges = 0;
+        int partiallyProcessedRanges = 0;
+        boolean stoppedByBudget = false;
 
         for (MerkleDifference difference : plan.differences()) {
+            if (!budget.canStartRange(processedRanges)) {
+                stoppedByBudget = true;
+                break;
+            }
+
+            int expectedRangeRecords = difference.leftRecordCount() + difference.rightRecordCount();
+            if (!budget.canScan(scannedLeftRecords + scannedRightRecords, expectedRangeRecords)) {
+                stoppedByBudget = true;
+                break;
+            }
+
             List<StoredRecord> leftRecords = rangeScanner.recordsInRange(left, difference.range());
             List<StoredRecord> rightRecords = rangeScanner.recordsInRange(right, difference.range());
+            int rangeScannedRecords = leftRecords.size() + rightRecords.size();
+            if (!budget.canScan(scannedLeftRecords + scannedRightRecords, rangeScannedRecords)) {
+                stoppedByBudget = true;
+                break;
+            }
+
             scannedLeftRecords += leftRecords.size();
             scannedRightRecords += rightRecords.size();
+            processedRanges++;
 
-            RepairCounters counters = repairRange(leftRecords, rightRecords, left, right);
+            int writeAttemptsBeforeRange = writeAttempts(appliedToLeft, appliedToRight, failedWrites);
+            RepairCounters counters = repairRange(leftRecords, rightRecords, left, right, budget, writeAttemptsBeforeRange);
             appliedToLeft += counters.appliedToLeft();
             appliedToRight += counters.appliedToRight();
             failedWrites += counters.failedWrites();
             alreadyConvergedKeys += counters.alreadyConvergedKeys();
+            if (counters.stoppedByBudget()) {
+                stoppedByBudget = true;
+                partiallyProcessedRanges++;
+                break;
+            }
         }
 
         return new MerkleRepairResult(
@@ -63,7 +102,9 @@ public final class MerkleRepairExecutor {
                 appliedToLeft,
                 appliedToRight,
                 failedWrites,
-                alreadyConvergedKeys
+                alreadyConvergedKeys,
+                plan.differences().size() - processedRanges + partiallyProcessedRanges,
+                stoppedByBudget
         );
     }
 
@@ -71,7 +112,9 @@ public final class MerkleRepairExecutor {
             List<StoredRecord> leftRecords,
             List<StoredRecord> rightRecords,
             StorageEngine left,
-            StorageEngine right
+            StorageEngine right,
+            MerkleRepairBudget budget,
+            int writeAttemptsBeforeRange
     ) {
         Map<Key, StoredRecord> leftByKey = byKey(leftRecords);
         Map<Key, StoredRecord> rightByKey = byKey(rightRecords);
@@ -83,6 +126,7 @@ public final class MerkleRepairExecutor {
         int appliedToRight = 0;
         int failedWrites = 0;
         int alreadyConvergedKeys = 0;
+        boolean stoppedByBudget = false;
 
         for (Key key : keys.keySet()) {
             Optional<StoredRecord> leftRecord = Optional.ofNullable(leftByKey.get(key));
@@ -92,12 +136,20 @@ public final class MerkleRepairExecutor {
             if (direction == 0) {
                 alreadyConvergedKeys++;
             } else if (direction < 0) {
+                if (!budget.canWrite(writeAttempts(writeAttemptsBeforeRange, appliedToLeft, appliedToRight, failedWrites))) {
+                    stoppedByBudget = true;
+                    break;
+                }
                 if (apply(left, rightRecord.orElseThrow())) {
                     appliedToLeft++;
                 } else {
                     failedWrites++;
                 }
             } else {
+                if (!budget.canWrite(writeAttempts(writeAttemptsBeforeRange, appliedToLeft, appliedToRight, failedWrites))) {
+                    stoppedByBudget = true;
+                    break;
+                }
                 if (apply(right, leftRecord.orElseThrow())) {
                     appliedToRight++;
                 } else {
@@ -106,7 +158,15 @@ public final class MerkleRepairExecutor {
             }
         }
 
-        return new RepairCounters(appliedToLeft, appliedToRight, failedWrites, alreadyConvergedKeys);
+        return new RepairCounters(appliedToLeft, appliedToRight, failedWrites, alreadyConvergedKeys, stoppedByBudget);
+    }
+
+    private static int writeAttempts(int appliedToLeft, int appliedToRight, int failedWrites) {
+        return appliedToLeft + appliedToRight + failedWrites;
+    }
+
+    private static int writeAttempts(int beforeRange, int appliedToLeft, int appliedToRight, int failedWrites) {
+        return beforeRange + appliedToLeft + appliedToRight + failedWrites;
     }
 
     private static int repairDirection(Optional<StoredRecord> leftRecord, Optional<StoredRecord> rightRecord) {
@@ -147,7 +207,8 @@ public final class MerkleRepairExecutor {
             int appliedToLeft,
             int appliedToRight,
             int failedWrites,
-            int alreadyConvergedKeys
+            int alreadyConvergedKeys,
+            boolean stoppedByBudget
     ) {
     }
 }
