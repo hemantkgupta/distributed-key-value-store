@@ -53,6 +53,65 @@ class ConvergenceMetricsCollectorTest {
         assertThat(snapshot.missingReadRepairTargets()).isEqualTo(1);
     }
 
+    @Test
+    void includesMerkleRepairOutcomeAndBudgetCounters() {
+        InMemoryHintStore store = new InMemoryHintStore();
+
+        ConvergenceMetricsSnapshot snapshot = new ConvergenceMetricsCollector(store).snapshot(
+                null,
+                null,
+                new MerkleRepairResult(3, 7, 5, 2, 1, 1, 4, 1, true)
+        );
+
+        assertThat(snapshot.differingMerkleRepairRanges()).isEqualTo(3);
+        assertThat(snapshot.scannedLeftMerkleRecords()).isEqualTo(7);
+        assertThat(snapshot.scannedRightMerkleRecords()).isEqualTo(5);
+        assertThat(snapshot.scannedMerkleRecords()).isEqualTo(12);
+        assertThat(snapshot.merkleRepairWritesToLeft()).isEqualTo(2);
+        assertThat(snapshot.merkleRepairWritesToRight()).isEqualTo(1);
+        assertThat(snapshot.successfulMerkleRepairWrites()).isEqualTo(3);
+        assertThat(snapshot.failedMerkleRepairWrites()).isEqualTo(1);
+        assertThat(snapshot.alreadyConvergedMerkleKeys()).isEqualTo(4);
+        assertThat(snapshot.skippedMerkleRepairRanges()).isEqualTo(1);
+        assertThat(snapshot.merkleRepairBudgetStops()).isEqualTo(1);
+    }
+
+    @Test
+    void exportsStableMetricSamples() {
+        InMemoryHintStore store = new InMemoryHintStore();
+        store.append(hint("hint-1", Instant.parse("2026-01-01T00:00:00Z"), 2));
+        ConvergenceMetricsSnapshot snapshot = new ConvergenceMetricsCollector(store).snapshot(
+                new HintReplaySummary(2, 2, 1, 1, 0),
+                new ReadRepairResult(List.of(new ReplicaResponse(new NodeId("node-1"), true, "ok")), 0),
+                new MerkleRepairResult(1, 2, 3, 1, 0, 0, 2, 0, false)
+        );
+
+        assertThat(snapshot.toMetrics())
+                .contains(
+                        new ConvergenceMetric("kv.repair.hints.pending", 1),
+                        new ConvergenceMetric("kv.repair.hints.oldest_created_at_epoch_seconds", 1767225600L),
+                        new ConvergenceMetric("kv.repair.hints.replay.attempted", 2),
+                        new ConvergenceMetric("kv.repair.read_repair.successful", 1),
+                        new ConvergenceMetric("kv.repair.merkle.ranges.differing", 1),
+                        new ConvergenceMetric("kv.repair.merkle.records.scanned", 5),
+                        new ConvergenceMetric("kv.repair.merkle.writes.successful", 1),
+                        new ConvergenceMetric("kv.repair.merkle.budget_stops", 0)
+                );
+    }
+
+    @Test
+    void reporterExportsSnapshotMetricsToSink() {
+        InMemoryHintStore store = new InMemoryHintStore();
+        ConvergenceMetricsSnapshot snapshot = new ConvergenceMetricsCollector(store).snapshot();
+        List<ConvergenceMetric> exported = new ArrayList<>();
+
+        new ConvergenceMetricsReporter(exported::addAll).report(snapshot);
+
+        assertThat(exported)
+                .extracting(ConvergenceMetric::name)
+                .contains("kv.repair.hints.pending", "kv.repair.merkle.budget_stops");
+    }
+
     private static HintRecord hint(String hintId, Instant createdAt, int deliveryAttempts) {
         return new HintRecord(
                 hintId,

@@ -41,8 +41,9 @@
 - Added Merkle repair planning that compares replica trees and returns differing leaf ranges.
 - Added storage-backed Merkle range scanning and local two-replica repair execution for missing/stale records.
 - Added repair backpressure budgets for max ranges, max scanned records, and max write attempts per run.
+- Added dependency-free convergence metric samples and exporter boundary for hints, read repair, Merkle repair, and budget stops.
 - Add remote range streaming and distributed repair scheduling for Merkle differences.
-- Add metrics export, alerting, and repair lag/dropped-hint counters.
+- Add Micrometer/Prometheus binding, alerting, and repair lag/dropped-hint counters.
 
 ## Phase 5: Topology Change
 

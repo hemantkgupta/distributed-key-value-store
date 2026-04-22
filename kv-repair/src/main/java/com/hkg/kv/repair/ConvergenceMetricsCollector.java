@@ -16,10 +16,18 @@ public final class ConvergenceMetricsCollector {
     }
 
     public ConvergenceMetricsSnapshot snapshot() {
-        return snapshot(null, null);
+        return snapshot(null, null, null);
     }
 
     public ConvergenceMetricsSnapshot snapshot(HintReplaySummary hintReplaySummary, ReadRepairResult readRepairResult) {
+        return snapshot(hintReplaySummary, readRepairResult, null);
+    }
+
+    public ConvergenceMetricsSnapshot snapshot(
+            HintReplaySummary hintReplaySummary,
+            ReadRepairResult readRepairResult,
+            MerkleRepairResult merkleRepairResult
+    ) {
         List<HintRecord> pendingHints = hintStore.loadAll();
         Optional<Instant> oldestHintCreatedAt = pendingHints.stream()
                 .map(HintRecord::createdAt)
@@ -40,7 +48,16 @@ public final class ConvergenceMetricsCollector {
                 readRepairResult == null ? 0 : readRepairResult.attemptedRepairs(),
                 readRepairResult == null ? 0 : readRepairResult.successfulRepairs(),
                 readRepairResult == null ? 0 : readRepairResult.failedRepairs(),
-                readRepairResult == null ? 0 : readRepairResult.missingTargets()
+                readRepairResult == null ? 0 : readRepairResult.missingTargets(),
+                merkleRepairResult == null ? 0 : merkleRepairResult.differingRanges(),
+                merkleRepairResult == null ? 0 : merkleRepairResult.scannedLeftRecords(),
+                merkleRepairResult == null ? 0 : merkleRepairResult.scannedRightRecords(),
+                merkleRepairResult == null ? 0 : merkleRepairResult.appliedToLeft(),
+                merkleRepairResult == null ? 0 : merkleRepairResult.appliedToRight(),
+                merkleRepairResult == null ? 0 : merkleRepairResult.failedWrites(),
+                merkleRepairResult == null ? 0 : merkleRepairResult.alreadyConvergedKeys(),
+                merkleRepairResult == null ? 0 : merkleRepairResult.skippedRanges(),
+                merkleRepairResult != null && merkleRepairResult.stoppedByBudget() ? 1 : 0
         );
     }
 }

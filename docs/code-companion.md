@@ -8,9 +8,9 @@ This file maps the future Complete Engineering Guide sections to code locations.
 | Foundation: durable single-node storage | `kv-storage-rocksdb` | Implemented with RocksDB, including full local scans |
 | Foundation: token ring and vnodes | `kv-partitioning` | Implemented, including token ranges for repair windows |
 | Foundation: write/read path | `kv-replication` | In-process write fanout, retries, local-quorum filtering, and digest-read fanout implemented |
-| Going Deeper: hinted handoff | `kv-repair` | Durable hint store, failed-write planner, and replay/backoff worker implemented |
-| Going Deeper: digest reads and read repair | `kv-storage-api`, `kv-storage-rocksdb`, `kv-replication`, `kv-repair` | Digest read result analysis, read-repair planning, and write-boundary execution implemented |
-| Going Deeper: Merkle anti-entropy | `kv-storage-api`, `kv-storage-rocksdb`, `kv-partitioning`, `kv-repair` | Storage-backed tree construction, differing-range planning, local repair execution, and per-run backpressure budgets implemented; remote streaming/scheduling planned |
+| Going Deeper: hinted handoff | `kv-repair` | Durable hint store, failed-write planner, replay/backoff worker, and metrics counters implemented |
+| Going Deeper: digest reads and read repair | `kv-storage-api`, `kv-storage-rocksdb`, `kv-replication`, `kv-repair` | Digest read result analysis, read-repair planning, write-boundary execution, and metrics counters implemented |
+| Going Deeper: Merkle anti-entropy | `kv-storage-api`, `kv-storage-rocksdb`, `kv-partitioning`, `kv-repair` | Storage-backed tree construction, differing-range planning, local repair execution, per-run backpressure budgets, and metric samples implemented; remote streaming/scheduling planned |
 | Going Deeper: tombstones and TTL | `kv-storage-api`, `kv-storage-rocksdb` | Implemented as stored-record metadata |
 | At Scale: compaction debt | `kv-storage-rocksdb`, `kv-storage-toy-lsm`, `kv-bench` | RocksDB dependency in place; storage metrics planned |
 | At Scale: deterministic simulation | `kv-simulator` | Planned |
@@ -65,7 +65,10 @@ When the guide claims a mechanism exists, this companion must point to the file 
 - `kv-repair/src/main/java/com/hkg/kv/repair/HintReplayWorker.java` replays due hints, deletes delivered hints, and reschedules failed hints.
 - `kv-repair/src/main/java/com/hkg/kv/repair/ReadRepairPlanner.java` selects the newest successful read record and targets stale successful replicas for repair.
 - `kv-repair/src/main/java/com/hkg/kv/repair/ReadRepairExecutor.java` applies a read-repair plan by writing the latest returned record to stale target replicas through `ReplicaWriter`.
-- `kv-repair/src/main/java/com/hkg/kv/repair/ConvergenceMetricsCollector.java` snapshots pending hint backlog shape, hint replay outcomes, and read repair outcomes.
+- `kv-repair/src/main/java/com/hkg/kv/repair/ConvergenceMetricsCollector.java` snapshots pending hint backlog shape, hint replay outcomes, read repair outcomes, Merkle repair outcomes, and budget stops.
+- `kv-repair/src/main/java/com/hkg/kv/repair/ConvergenceMetric.java` models one dependency-free metric sample with a stable name, value, and optional attributes.
+- `kv-repair/src/main/java/com/hkg/kv/repair/ConvergenceMetricsExporter.java` defines the sink boundary for metrics export.
+- `kv-repair/src/main/java/com/hkg/kv/repair/ConvergenceMetricsReporter.java` exports a `ConvergenceMetricsSnapshot` as stable `kv.repair.*` metric samples.
 - `kv-repair/src/main/java/com/hkg/kv/repair/MerkleRecordDigest.java` represents a token, key, and record digest emitted by a future per-range scan.
 - `kv-repair/src/main/java/com/hkg/kv/repair/MerkleTreeBuilder.java` builds deterministic SHA-256 Merkle trees over token-range record digests.
 - `kv-repair/src/main/java/com/hkg/kv/repair/MerkleRepairPlanner.java` compares two same-range trees and returns the differing leaf ranges that need scan/stream repair.
@@ -78,7 +81,7 @@ When the guide claims a mechanism exists, this companion must point to the file 
 - `kv-repair/src/test/java/com/hkg/kv/repair/HintReplayWorkerTest.java` verifies delivered hint deletion, failed hint rescheduling, not-due skipping, and delivery exception handling.
 - `kv-repair/src/test/java/com/hkg/kv/repair/ReadRepairPlannerTest.java` verifies empty repair plans, stale target selection, tombstone-as-latest behavior, and no-record handling.
 - `kv-repair/src/test/java/com/hkg/kv/repair/ReadRepairExecutorTest.java` verifies successful repair writes, missing target handling, and exception capture.
-- `kv-repair/src/test/java/com/hkg/kv/repair/ConvergenceMetricsCollectorTest.java` verifies hint backlog shape plus replay/read-repair outcome counters.
+- `kv-repair/src/test/java/com/hkg/kv/repair/ConvergenceMetricsCollectorTest.java` verifies hint backlog shape, replay/read-repair/Merkle outcome counters, stable metric samples, and reporter export.
 - `kv-repair/src/test/java/com/hkg/kv/repair/MerkleTreeBuilderTest.java` verifies stable root hashes, full-depth empty-range shape, and range validation.
 - `kv-repair/src/test/java/com/hkg/kv/repair/MerkleRepairPlannerTest.java` verifies no-op matching trees, changed digest detection, missing-record detection, and range validation.
 - `kv-repair/src/test/java/com/hkg/kv/repair/MerkleRangeScannerTest.java` verifies storage-backed tree construction and deterministic scan ordering.
