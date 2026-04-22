@@ -13,6 +13,7 @@
 ## Phase 2: Partitioning - Done
 
 - Implemented deterministic SHA-256-derived token hashing.
+- Implemented token ranges with wraparound/full-ring semantics for repair windows.
 - Implemented vnode ownership with deterministic vnode tokens per physical node.
 - Built replica preference lists that walk clockwise and select distinct physical nodes.
 - Added ring epoch metadata through immutable `PartitionRingSnapshot`.
@@ -36,7 +37,9 @@
 - Added hint replay worker with exponential backoff scheduling.
 - Added digest read result analysis, read-repair planning, and read-repair execution through the write boundary.
 - Added convergence metrics snapshots for hint backlog, hint replay outcomes, and read repair outcomes.
-- Add Merkle tree repair per token range.
+- Added deterministic Merkle tree construction over token-range record digests.
+- Added Merkle repair planning that compares replica trees and returns differing leaf ranges.
+- Add range scan/streaming and repair execution for Merkle differences.
 - Add metrics export, alerting, and repair lag/dropped-hint counters.
 
 ## Phase 5: Topology Change

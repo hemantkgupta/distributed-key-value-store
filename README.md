@@ -6,7 +6,7 @@ The project target is a Dynamo/Cassandra-style leaderless AP store with tunable 
 
 ## Current Scope
 
-This repository is at checkpoint 6: durable single-node storage, Phase 2 partitioning, bounded Phase 3 write/read replication primitives, and Phase 4 convergence primitives for hinted handoff plus read repair execution.
+This repository is at checkpoint 7: durable single-node storage, Phase 2 partitioning, bounded Phase 3 write/read replication primitives, and Phase 4 convergence primitives for hinted handoff, read repair execution, and Merkle anti-entropy planning.
 
 Implemented:
 - `StorageEngine` contract.
@@ -30,8 +30,11 @@ Implemented:
 - Read repair planner that selects the newest returned record and targets stale successful replicas.
 - Read repair executor that applies the latest returned record through the replica write boundary.
 - Convergence metrics snapshot for pending hints, hint replay outcomes, and read repair outcomes.
+- Token range model for ring-aware repair windows.
+- Deterministic Merkle tree builder over token-range record digests.
+- Merkle repair planner that compares two replica trees and returns only differing leaf ranges.
 
-Transport, timeout budgets, Merkle repair, metrics export, and node-runtime integration come next.
+Transport, timeout budgets, Merkle range streaming/execution, metrics export, and node-runtime integration come next.
 
 ## Planned Local Runtime
 
