@@ -6,7 +6,7 @@ The project target is a Dynamo/Cassandra-style leaderless AP store with tunable 
 
 ## Current Scope
 
-This repository is at checkpoint 20: durable single-node storage, Phase 2 partitioning, bounded Phase 3 write/read replication primitives, and Phase 4 convergence primitives for hinted handoff, read repair execution, Merkle anti-entropy repair execution, repair backpressure, convergence metric export, deterministic Merkle repair scheduling, concrete HTTP transport for replica/repair flows, durable repair leases, node-side lease backend wiring, an embedded HTTP node runtime, ring-driven coordinator planning, coordinator-side durable hint recording, and runtime-owned hint replay scheduling.
+This repository is at checkpoint 21: durable single-node storage, Phase 2 partitioning, bounded Phase 3 write/read replication primitives, and Phase 4 convergence primitives for hinted handoff, read repair execution, Merkle anti-entropy repair execution, repair backpressure, convergence metric export, deterministic Merkle repair scheduling, concrete HTTP transport for replica/repair flows, durable repair leases, node-side lease backend wiring, an embedded HTTP node runtime, ring-driven coordinator planning, coordinator-side durable hint recording, runtime-owned hint replay scheduling, and coordinator request-budget enforcement.
 
 Implemented:
 - `StorageEngine` contract.
@@ -48,8 +48,9 @@ Implemented:
 - Property-backed embedded `kv-node` runtime that opens RocksDB storage, starts a JDK `HttpServer`, registers fixed replica/repair endpoints, returns the actual bound `ClusterNode`, and wires the selected repair lease backend into one lifecycle.
 - Coordinator config, replica planners, service, client, and HTTP handlers in `kv-node` that route external write/read requests across configured cluster nodes, optionally derive per-key replica plans from the consistent-hash ring, persist durable hints for failed planned replicas, allow `ANY` writes to succeed via coordinator-side hint recording, and run opportunistic read repair on digest mismatch.
 - `kv-node` hint replay config plus a runtime-owned maintenance loop that maps due hints back to configured cluster nodes, replays them through the existing HTTP replica writer, and exposes an explicit `replayHintsNow()` hook for tests and future admin flows.
+- Coordinator request budgets in `kv-node` and `kv-replication` that stop later replica attempts, stop later digest reads, and skip read repair once the configured wall-clock budget is spent.
 
-Request timeout budgets, sloppy-quorum substitute-node selection, repair tick orchestration, Micrometer/Prometheus binding, repair task persistence, Docker Compose/GKE runtime packaging, and a gRPC alternative come next.
+Sloppy-quorum substitute-node selection, repair tick orchestration, Micrometer/Prometheus binding, repair task persistence, Docker Compose/GKE runtime packaging, and a gRPC alternative come next.
 
 Node runtime properties:
 
@@ -80,6 +81,7 @@ Coordinator routing properties:
 | `kv.node.coordinator.nodes.<i>.host` | none | Remote host for non-self entries |
 | `kv.node.coordinator.nodes.<i>.port` | none | Remote port for non-self entries |
 | `kv.node.coordinator.nodes.<i>.datacenter` | none | Datacenter label used for `LOCAL_QUORUM` counting |
+| `kv.node.coordinator.request-budget` | unset | Optional wall-clock budget for coordinator replica fanout/retries and digest reads; when exhausted, later replicas are marked failed and read repair is skipped |
 | `kv.node.coordinator.replication-factor` | unset | When set, enable ring-driven per-key placement over the configured cluster nodes |
 | `kv.node.coordinator.vnode-count` | `32` | Vnodes per physical node for ring-driven coordinator planning |
 | `kv.node.coordinator.ring-epoch` | `1` | Ring snapshot epoch metadata for ring-driven coordinator planning |

@@ -3,6 +3,8 @@ package com.hkg.kv.node;
 import com.hkg.kv.partitioning.ConsistentHashReplicaPlacementPolicy;
 import com.hkg.kv.partitioning.ClusterNode;
 import java.nio.file.Path;
+import java.time.Duration;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Properties;
@@ -11,6 +13,7 @@ public record CoordinatorConfig(
         List<CoordinatorReplicaConfig> nodes,
         String localDatacenter,
         int maxAttempts,
+        Duration requestBudget,
         boolean readRepairEnabled,
         Integer replicationFactor,
         int vnodeCount,
@@ -26,6 +29,7 @@ public record CoordinatorConfig(
     public static final String REPLICA_PREFIX = "kv.node.coordinator.replicas.";
     public static final String LOCAL_DATACENTER_PROPERTY = "kv.node.coordinator.local-datacenter";
     public static final String MAX_ATTEMPTS_PROPERTY = "kv.node.coordinator.max-attempts";
+    public static final String REQUEST_BUDGET_PROPERTY = "kv.node.coordinator.request-budget";
     public static final String READ_REPAIR_ENABLED_PROPERTY = "kv.node.coordinator.read-repair-enabled";
     public static final String REPLICATION_FACTOR_PROPERTY = "kv.node.coordinator.replication-factor";
     public static final String VNODE_COUNT_PROPERTY = "kv.node.coordinator.vnode-count";
@@ -50,6 +54,9 @@ public record CoordinatorConfig(
         if (maxAttempts < 1) {
             throw new IllegalArgumentException("coordinator max attempts must be positive");
         }
+        if (requestBudget != null && (requestBudget.isZero() || requestBudget.isNegative())) {
+            throw new IllegalArgumentException("coordinator request budget must be positive");
+        }
         if (replicationFactor != null && replicationFactor < 1) {
             throw new IllegalArgumentException("coordinator replication factor must be positive");
         }
@@ -62,7 +69,18 @@ public record CoordinatorConfig(
     }
 
     public static CoordinatorConfig localOnly() {
-        return new CoordinatorConfig(List.of(), null, 1, true, null, DEFAULT_VNODE_COUNT, DEFAULT_RING_EPOCH, true, null);
+        return new CoordinatorConfig(
+                List.of(),
+                null,
+                1,
+                null,
+                true,
+                null,
+                DEFAULT_VNODE_COUNT,
+                DEFAULT_RING_EPOCH,
+                true,
+                null
+        );
     }
 
     public static CoordinatorConfig fromProperties(Properties properties) {
@@ -89,6 +107,7 @@ public record CoordinatorConfig(
                 List.copyOf(nodes),
                 properties.getProperty(LOCAL_DATACENTER_PROPERTY),
                 parseNonNegativeInt(properties.getProperty(MAX_ATTEMPTS_PROPERTY), 1, MAX_ATTEMPTS_PROPERTY),
+                parseOptionalDuration(properties.getProperty(REQUEST_BUDGET_PROPERTY), REQUEST_BUDGET_PROPERTY),
                 Boolean.parseBoolean(properties.getProperty(READ_REPAIR_ENABLED_PROPERTY, "true")),
                 parseOptionalPositiveInt(properties.getProperty(REPLICATION_FACTOR_PROPERTY), REPLICATION_FACTOR_PROPERTY),
                 parseNonNegativeInt(properties.getProperty(VNODE_COUNT_PROPERTY), DEFAULT_VNODE_COUNT, VNODE_COUNT_PROPERTY),
@@ -187,6 +206,17 @@ public record CoordinatorConfig(
             return Integer.parseInt(value);
         } catch (NumberFormatException exception) {
             throw new IllegalArgumentException("invalid integer for " + propertyName + ": " + value, exception);
+        }
+    }
+
+    private static Duration parseOptionalDuration(String value, String propertyName) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        try {
+            return Duration.parse(value);
+        } catch (DateTimeParseException exception) {
+            throw new IllegalArgumentException("invalid duration for " + propertyName + ": " + value, exception);
         }
     }
 

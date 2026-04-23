@@ -19,6 +19,7 @@ import com.hkg.kv.replication.ReplicationCoordinator;
 import com.hkg.kv.replication.ReplicationOptions;
 import com.hkg.kv.replication.ReplicationPlan;
 import com.hkg.kv.replication.ReplicationResult;
+import com.hkg.kv.replication.RequestBudget;
 import com.hkg.kv.storage.StoredRecord;
 import java.util.ArrayList;
 import java.util.List;
@@ -65,11 +66,13 @@ public final class CoordinatorService {
         if (request == null) {
             throw new IllegalArgumentException("coordinator write request must not be null");
         }
+        RequestBudget requestBudget = requestBudget();
         ReplicationPlan plan = replicaPlanner.plan(request.mutation().key(), request.consistencyLevel());
         ReplicationResult result = replicationCoordinator.replicate(
                 plan,
                 request.mutation(),
-                replicationOptions(plan)
+                replicationOptions(plan),
+                requestBudget
         );
         int durableHintsRecorded = recordFailedReplicas(plan, request, result).size();
         return new CoordinatorWriteResponse(
@@ -86,8 +89,9 @@ public final class CoordinatorService {
         if (request == null) {
             throw new IllegalArgumentException("coordinator read request must not be null");
         }
+        RequestBudget requestBudget = requestBudget();
         ReplicationPlan plan = replicaPlanner.plan(request.key(), request.consistencyLevel());
-        DigestReadResult readResult = digestReadCoordinator.read(plan);
+        DigestReadResult readResult = digestReadCoordinator.read(plan, requestBudget);
         ConsistencyWaitPolicy waitPolicy = ConsistencyWaitPolicy.forLevel(
                 request.consistencyLevel(),
                 plan.replicas().size(),
@@ -109,7 +113,10 @@ public final class CoordinatorService {
         }
 
         ReadRepairResult repairResult = noRepair();
-        if (config.readRepairEnabled() && !readResult.digestsAgree()) {
+        boolean readRepairSkippedByBudget = false;
+        if (config.readRepairEnabled() && !readResult.digestsAgree() && requestBudget.exhausted()) {
+            readRepairSkippedByBudget = true;
+        } else if (config.readRepairEnabled() && !readResult.digestsAgree()) {
             ReadRepairPlan repairPlan = readRepairPlanner.plan(readResult);
             if (repairPlan.requiresRepair()) {
                 repairResult = readRepairExecutor.execute(repairPlan, plan.replicas());
@@ -125,7 +132,7 @@ public final class CoordinatorService {
                 repairResult.successfulRepairs(),
                 repairResult.failedRepairs(),
                 readFailureDetails(readResult.failedResponses()),
-                "ok"
+                readRepairSkippedByBudget ? "read repair skipped because request budget was exhausted" : "ok"
         );
     }
 
@@ -197,6 +204,12 @@ public final class CoordinatorService {
             return List.of();
         }
         return hintedHandoffPlanner.recordFailedReplicas(plan, request.mutation(), result);
+    }
+
+    private RequestBudget requestBudget() {
+        return config.requestBudget() == null
+                ? RequestBudget.unbounded()
+                : RequestBudget.start(config.requestBudget());
     }
 
     private static boolean consistencySatisfiedByHint(ConsistencyWaitPolicy waitPolicy, int durableHintsRecorded) {

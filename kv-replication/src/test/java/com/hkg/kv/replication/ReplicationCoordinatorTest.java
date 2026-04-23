@@ -15,6 +15,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import org.junit.jupiter.api.Test;
 
 class ReplicationCoordinatorTest {
@@ -198,6 +199,31 @@ class ReplicationCoordinatorTest {
         ))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("local datacenter has no replicas in plan");
+    }
+
+    @Test
+    void requestBudgetStopsRetriesAndLaterReplicas() {
+        ReplicationPlan plan = plan(ConsistencyLevel.ALL, 3);
+        AtomicLong now = new AtomicLong();
+        ReplicationCoordinator coordinator = new ReplicationCoordinator((replica, mutation) -> {
+            now.addAndGet(5L);
+            return failure(replica, "transport timeout");
+        });
+
+        ReplicationResult result = coordinator.replicate(
+                plan,
+                mutation(plan.key()),
+                ReplicationOptions.defaults().withMaxAttempts(3),
+                RequestBudget.start(java.time.Duration.ofNanos(4L), now::get)
+        );
+
+        assertThat(result.consistencySatisfied()).isFalse();
+        assertThat(result.totalAttempts()).isEqualTo(1);
+        assertThat(result.responses().get(0).attempts()).isEqualTo(1);
+        assertThat(result.responses().get(0).detail()).contains("request budget exhausted after 1 attempt");
+        assertThat(result.responses().get(1).attempts()).isZero();
+        assertThat(result.responses().get(1).detail()).contains("before contacting replica");
+        assertThat(result.responses().get(2).attempts()).isZero();
     }
 
     private static ReplicationPlan plan(ConsistencyLevel consistencyLevel, int replicaCount) {

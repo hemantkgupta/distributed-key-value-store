@@ -8,6 +8,9 @@ import java.util.List;
 import java.util.Objects;
 
 public final class ReplicationCoordinator {
+    private static final String BUDGET_EXHAUSTED_BEFORE_CONTACT =
+            "request budget exhausted before contacting replica";
+
     private final ReplicaWriter replicaWriter;
 
     public ReplicationCoordinator(ReplicaWriter replicaWriter) {
@@ -29,6 +32,15 @@ public final class ReplicationCoordinator {
     }
 
     public ReplicationResult replicate(ReplicationPlan plan, MutationRecord mutation, ReplicationOptions options) {
+        return replicate(plan, mutation, options, RequestBudget.unbounded());
+    }
+
+    public ReplicationResult replicate(
+            ReplicationPlan plan,
+            MutationRecord mutation,
+            ReplicationOptions options,
+            RequestBudget requestBudget
+    ) {
         if (plan == null) {
             throw new IllegalArgumentException("replication plan must not be null");
         }
@@ -37,6 +49,9 @@ public final class ReplicationCoordinator {
         }
         if (options == null) {
             throw new IllegalArgumentException("replication options must not be null");
+        }
+        if (requestBudget == null) {
+            throw new IllegalArgumentException("request budget must not be null");
         }
         if (!plan.key().equals(mutation.key())) {
             throw new IllegalArgumentException("mutation key must match replication plan key");
@@ -52,7 +67,7 @@ public final class ReplicationCoordinator {
         List<ReplicaResponse> responses = new ArrayList<>(plan.replicas().size());
         int successfulAcknowledgements = 0;
         for (ClusterNode replica : plan.replicas()) {
-            ReplicaResponse response = invokeReplicaWriter(replica, mutation, options.maxAttempts());
+            ReplicaResponse response = invokeReplicaWriter(replica, mutation, options.maxAttempts(), requestBudget);
             responses.add(response);
             if (response.success() && countsTowardAcknowledgement(plan, options, replica)) {
                 successfulAcknowledgements++;
@@ -67,9 +82,26 @@ public final class ReplicationCoordinator {
         );
     }
 
-    private ReplicaResponse invokeReplicaWriter(ClusterNode replica, MutationRecord mutation, int maxAttempts) {
+    private ReplicaResponse invokeReplicaWriter(
+            ClusterNode replica,
+            MutationRecord mutation,
+            int maxAttempts,
+            RequestBudget requestBudget
+    ) {
         ReplicaResponse lastResponse = null;
         for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+            if (requestBudget.exhausted()) {
+                if (lastResponse == null) {
+                    return new ReplicaResponse(replica.nodeId(), false, BUDGET_EXHAUSTED_BEFORE_CONTACT, 0);
+                }
+                return new ReplicaResponse(
+                        replica.nodeId(),
+                        false,
+                        "request budget exhausted after " + lastResponse.attempts()
+                                + " attempt(s); last failure: " + lastResponse.detail(),
+                        lastResponse.attempts()
+                );
+            }
             try {
                 ReplicaResponse response = replicaWriter.write(replica, mutation);
                 if (response == null) {

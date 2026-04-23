@@ -7,8 +7,12 @@ import com.hkg.kv.common.Key;
 import com.hkg.kv.common.Value;
 import com.hkg.kv.storage.MutationRecord;
 import com.hkg.kv.storage.StoredRecord;
+import com.sun.net.httpserver.HttpServer;
+import java.io.IOException;
+import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Optional;
 import java.util.Properties;
@@ -109,6 +113,32 @@ class HttpCoordinatorClientTest {
         }
     }
 
+    @Test
+    void writeBudgetStopsLaterStaticReplicaAttempts() {
+        try (SlowServer slowServer = SlowServer.start(Duration.ofMillis(250));
+             KvNodeRuntime nodeA = KvNodeRuntime.start(KvNodeConfig.fromProperties(staticBudgetProperties(
+                     "node-a",
+                     tempDir.resolve("node-a-budget"),
+                     slowServer.port()
+             )))) {
+            HttpCoordinatorClient client = new HttpCoordinatorClient();
+            Key key = Key.utf8("user:budget");
+            MutationRecord mutation = put(key, "should-not-reach-self", 4);
+
+            CoordinatorWriteResponse response = client.write(
+                    nodeA.localNode(),
+                    new CoordinatorWriteRequest(mutation, ConsistencyLevel.ONE)
+            );
+
+            assertThat(response.success()).isFalse();
+            assertThat(response.acknowledgements()).isZero();
+            assertThat(response.totalAttempts()).isEqualTo(1);
+            assertThat(response.failedReplicaDetails())
+                    .anySatisfy(detail -> assertThat(detail).contains("request budget exhausted before contacting replica"));
+            assertThat(nodeA.storage().get(key)).isEmpty();
+        }
+    }
+
     private static Properties baseProperties(String nodeId, Path storagePath) {
         Properties properties = new Properties();
         properties.setProperty(KvNodeConfig.NODE_ID_PROPERTY, nodeId);
@@ -148,6 +178,20 @@ class HttpCoordinatorClientTest {
         return properties;
     }
 
+    private static Properties staticBudgetProperties(String nodeId, Path storagePath, int unavailablePort) {
+        Properties properties = baseProperties(nodeId, storagePath);
+        properties.setProperty(CoordinatorConfig.NODE_COUNT_PROPERTY, "2");
+        properties.setProperty(CoordinatorConfig.NODE_PREFIX + "0.node-id", "node-b");
+        properties.setProperty(CoordinatorConfig.NODE_PREFIX + "0.host", "127.0.0.1");
+        properties.setProperty(CoordinatorConfig.NODE_PREFIX + "0.port", Integer.toString(unavailablePort));
+        properties.setProperty(CoordinatorConfig.NODE_PREFIX + "1.node-id", nodeId);
+        properties.setProperty(CoordinatorConfig.NODE_PREFIX + "1.self", "true");
+        properties.setProperty(CoordinatorConfig.MAX_ATTEMPTS_PROPERTY, "3");
+        properties.setProperty(CoordinatorConfig.REQUEST_BUDGET_PROPERTY, "PT0.05S");
+        properties.setProperty(KvNodeConfig.REQUEST_TIMEOUT_PROPERTY, "PT0.25S");
+        return properties;
+    }
+
     private static MutationRecord put(Key key, String value, int version) {
         return new MutationRecord(
                 key,
@@ -157,5 +201,43 @@ class HttpCoordinatorClientTest {
                 Optional.empty(),
                 "m" + version
         );
+    }
+
+    private static final class SlowServer implements AutoCloseable {
+        private final HttpServer server;
+
+        private SlowServer(HttpServer server) {
+            this.server = server;
+        }
+
+        static SlowServer start(Duration responseDelay) {
+            try {
+                HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+                server.createContext("/", exchange -> {
+                    try {
+                        Thread.sleep(responseDelay.toMillis());
+                        exchange.sendResponseHeaders(503, -1);
+                    } catch (InterruptedException exception) {
+                        Thread.currentThread().interrupt();
+                        exchange.sendResponseHeaders(500, -1);
+                    } finally {
+                        exchange.close();
+                    }
+                });
+                server.start();
+                return new SlowServer(server);
+            } catch (IOException exception) {
+                throw new IllegalStateException("failed to start slow server", exception);
+            }
+        }
+
+        int port() {
+            return server.getAddress().getPort();
+        }
+
+        @Override
+        public void close() {
+            server.stop(0);
+        }
     }
 }

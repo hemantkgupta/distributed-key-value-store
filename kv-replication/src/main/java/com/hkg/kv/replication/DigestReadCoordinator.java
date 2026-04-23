@@ -6,6 +6,9 @@ import java.util.ArrayList;
 import java.util.List;
 
 public final class DigestReadCoordinator {
+    private static final String BUDGET_EXHAUSTED_BEFORE_CONTACT =
+            "request budget exhausted before contacting replica";
+
     private final ReplicaReader replicaReader;
 
     public DigestReadCoordinator(ReplicaReader replicaReader) {
@@ -16,19 +19,29 @@ public final class DigestReadCoordinator {
     }
 
     public DigestReadResult read(ReplicationPlan plan) {
+        return read(plan, RequestBudget.unbounded());
+    }
+
+    public DigestReadResult read(ReplicationPlan plan, RequestBudget requestBudget) {
         if (plan == null) {
             throw new IllegalArgumentException("replication plan must not be null");
+        }
+        if (requestBudget == null) {
+            throw new IllegalArgumentException("request budget must not be null");
         }
 
         Key key = plan.key();
         List<ReplicaReadResponse> responses = new ArrayList<>(plan.replicas().size());
         for (ClusterNode replica : plan.replicas()) {
-            responses.add(readReplica(replica, key));
+            responses.add(readReplica(replica, key, requestBudget));
         }
         return new DigestReadResult(key, responses);
     }
 
-    private ReplicaReadResponse readReplica(ClusterNode replica, Key key) {
+    private ReplicaReadResponse readReplica(ClusterNode replica, Key key, RequestBudget requestBudget) {
+        if (requestBudget.exhausted()) {
+            return ReplicaReadResponse.failure(replica.nodeId(), BUDGET_EXHAUSTED_BEFORE_CONTACT);
+        }
         try {
             ReplicaReadResponse response = replicaReader.read(replica, key);
             if (response == null) {

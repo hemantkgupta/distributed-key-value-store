@@ -12,8 +12,8 @@ public record ReplicaResponse(NodeId nodeId, boolean success, String detail, int
             throw new IllegalArgumentException("node id must not be null");
         }
         detail = detail == null ? "" : detail;
-        if (attempts < 1) {
-            throw new IllegalArgumentException("attempts must be positive");
+        if (attempts < 0) {
+            throw new IllegalArgumentException("attempts must not be negative");
         }
     }
 }

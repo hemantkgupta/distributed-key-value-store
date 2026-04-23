@@ -40,6 +40,7 @@ class CoordinatorConfigTest {
         properties.setProperty(CoordinatorConfig.NODE_COUNT_PROPERTY, "2");
         properties.setProperty(CoordinatorConfig.LOCAL_DATACENTER_PROPERTY, "dc-a");
         properties.setProperty(CoordinatorConfig.MAX_ATTEMPTS_PROPERTY, "3");
+        properties.setProperty(CoordinatorConfig.REQUEST_BUDGET_PROPERTY, "PT2S");
         properties.setProperty(CoordinatorConfig.NODE_PREFIX + "0.node-id", "node-a");
         properties.setProperty(CoordinatorConfig.NODE_PREFIX + "0.self", "true");
         properties.setProperty(CoordinatorConfig.NODE_PREFIX + "0.datacenter", "dc-a");
@@ -53,6 +54,7 @@ class CoordinatorConfigTest {
         List<ClusterNode> nodes = config.resolveClusterNodes(localNode);
 
         assertThat(config.maxAttempts()).isEqualTo(3);
+        assertThat(config.requestBudget()).isEqualTo(java.time.Duration.ofSeconds(2));
         assertThat(config.localDatacenter()).isEqualTo("dc-a");
         assertThat(config.ringDrivenPlanningEnabled()).isFalse();
         assertThat(nodes).hasSize(2);
@@ -138,5 +140,15 @@ class CoordinatorConfigTest {
         assertThatThrownBy(() -> config.createReplicaPlanner(localNode))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("replication factor must not exceed configured cluster nodes");
+    }
+
+    @Test
+    void rejectsInvalidRequestBudgetDuration() {
+        Properties properties = new Properties();
+        properties.setProperty(CoordinatorConfig.REQUEST_BUDGET_PROPERTY, "fast");
+
+        assertThatThrownBy(() -> CoordinatorConfig.fromProperties(properties))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("invalid duration");
     }
 }

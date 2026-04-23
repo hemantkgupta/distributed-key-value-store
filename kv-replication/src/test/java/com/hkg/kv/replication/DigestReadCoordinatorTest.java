@@ -13,6 +13,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicLong;
 import org.junit.jupiter.api.Test;
 
 class DigestReadCoordinatorTest {
@@ -80,6 +81,26 @@ class DigestReadCoordinatorTest {
                     assertThat(response.nodeId()).isEqualTo(new NodeId("node-0"));
                     assertThat(response.detail()).contains("did not match");
                 });
+    }
+
+    @Test
+    void requestBudgetStopsLaterReplicaReads() {
+        ReplicationPlan plan = plan(3);
+        AtomicLong now = new AtomicLong();
+        DigestReadCoordinator coordinator = new DigestReadCoordinator((replica, key) -> {
+            now.addAndGet(5L);
+            return ReplicaReadResponse.success(replica.nodeId(), Optional.of(record(key, 1)), new byte[] {1});
+        });
+
+        DigestReadResult result = coordinator.read(
+                plan,
+                RequestBudget.start(java.time.Duration.ofNanos(4L), now::get)
+        );
+
+        assertThat(result.successfulResponses()).hasSize(1);
+        assertThat(result.failedResponses()).hasSize(2);
+        assertThat(result.failedResponses())
+                .allSatisfy(response -> assertThat(response.detail()).contains("before contacting replica"));
     }
 
     private static ReplicationPlan plan(int replicaCount) {

@@ -51,7 +51,8 @@
 - Added a property-backed embedded node runtime that opens RocksDB storage, starts a JDK HTTP server, registers replica/repair handlers, exposes the actual bound `ClusterNode`, and wires the selected repair lease backend into one lifecycle.
 - Added coordinator config, static/ring replica planners, service, and HTTP endpoints so external write/read requests can route across configured cluster nodes, derive per-key replica plans from the consistent-hash ring when configured, persist durable hints for failed planned replicas, satisfy `ANY` through coordinator-side hint recording, and trigger read repair on digest mismatch.
 - Added hint replay runtime config, target-node delivery mapping, an explicit replay hook, and a scheduled maintenance loop that replays due durable hints through the existing replica transport.
-- Add timeout budgets, repair task persistence, sloppy-quorum substitute-node selection, repair tick orchestration, Compose/GKE runtime packaging, and a gRPC alternative.
+- Added coordinator request budgets that stop later replica retries, stop later digest reads, and skip read repair once the configured wall-clock budget is exhausted.
+- Add repair task persistence, sloppy-quorum substitute-node selection, repair tick orchestration, Compose/GKE runtime packaging, and a gRPC alternative.
 - Add Micrometer/Prometheus binding, alerting, and repair lag/dropped-hint counters.
 
 ## Phase 5: Topology Change

@@ -7,7 +7,7 @@ This file maps the future Complete Engineering Guide sections to code locations.
 | Foundation: API and data model | `kv-common`, `kv-storage-api` | Implemented for storage boundary, including repair scans |
 | Foundation: durable single-node storage | `kv-storage-rocksdb` | Implemented with RocksDB, including full local scans |
 | Foundation: token ring and vnodes | `kv-partitioning` | Implemented, including token ranges for repair windows |
-| Foundation: write/read path | `kv-replication`, `kv-node` | In-process write fanout, retries, local-quorum filtering, digest-read fanout, concrete HTTP transport adapters, and coordinator HTTP endpoints with static-or-ring replica planning implemented |
+| Foundation: write/read path | `kv-replication`, `kv-node` | In-process write fanout, retries, local-quorum filtering, digest-read fanout, coordinator request budgets, concrete HTTP transport adapters, and coordinator HTTP endpoints with static-or-ring replica planning implemented |
 | Going Deeper: hinted handoff | `kv-repair`, `kv-node` | Durable hint store, failed-write planner, replay/backoff worker, metrics counters, coordinator-side hint persistence for failed planned writes, and runtime-owned periodic hint replay implemented |
 | Going Deeper: digest reads and read repair | `kv-storage-api`, `kv-storage-rocksdb`, `kv-replication`, `kv-repair`, `kv-node` | Digest read result analysis, read-repair planning, write-boundary execution, ring-planned coordinator reads, and metrics counters implemented |
 | Going Deeper: Merkle anti-entropy | `kv-storage-api`, `kv-storage-rocksdb`, `kv-partitioning`, `kv-replication`, `kv-repair`, `kv-node` | Storage-backed tree construction, differing-range planning, local repair execution, per-run backpressure budgets, deterministic due-task scheduling, transport-agnostic range streaming, concrete HTTP range streaming, lease-guarded scheduling, JDBC durable lease backend, node-side backend selection, and metric samples implemented; repair tick orchestration is still planned |
@@ -46,13 +46,14 @@ When the guide claims a mechanism exists, this companion must point to the file 
 - `kv-replication/src/test/java/com/hkg/kv/replication/ConsistencyWaitPolicyTest.java` verifies N=3/N=5 quorum math and local-quorum validation.
 - `kv-replication/src/main/java/com/hkg/kv/replication/ReplicaWriter.java` abstracts transport-specific mutation delivery to one replica.
 - `kv-replication/src/main/java/com/hkg/kv/replication/ReplicationOptions.java` configures local-datacenter scoping and per-replica max attempts.
-- `kv-replication/src/main/java/com/hkg/kv/replication/ReplicationCoordinator.java` fans one mutation out to every planned replica, retries failed replica writes, and evaluates consistency without depending on HTTP/gRPC.
+- `kv-replication/src/main/java/com/hkg/kv/replication/RequestBudget.java` tracks an optional wall-clock request budget shared across coordinator fanout phases.
+- `kv-replication/src/main/java/com/hkg/kv/replication/ReplicationCoordinator.java` fans one mutation out to every planned replica, retries failed replica writes, stops later retries or untouched replicas once the request budget is exhausted, and evaluates consistency without depending on HTTP/gRPC.
 - `kv-replication/src/main/java/com/hkg/kv/replication/ReplicationResult.java` exposes ordered responses, failed responses, acknowledgement count, total attempts, wait policy, and final consistency satisfaction.
-- `kv-replication/src/test/java/com/hkg/kv/replication/ReplicationCoordinatorTest.java` verifies quorum success, `ALL` failure, fanout after early quorum, key mismatch rejection, exception capture, retries, and local-datacenter quorum filtering.
+- `kv-replication/src/test/java/com/hkg/kv/replication/ReplicationCoordinatorTest.java` verifies quorum success, `ALL` failure, fanout after early quorum, key mismatch rejection, exception capture, retries, local-datacenter quorum filtering, and request-budget exhaustion semantics.
 - `kv-replication/src/main/java/com/hkg/kv/replication/ReplicaReader.java` abstracts transport-specific digest/full-record reads from one replica.
-- `kv-replication/src/main/java/com/hkg/kv/replication/DigestReadCoordinator.java` fans one read to every planned replica and captures failed read responses.
+- `kv-replication/src/main/java/com/hkg/kv/replication/DigestReadCoordinator.java` fans one read to every planned replica, stops later reads when the request budget is exhausted, and captures failed read responses.
 - `kv-replication/src/main/java/com/hkg/kv/replication/DigestReadResult.java` reports successful responses, failed responses, digest agreement, and digest mismatches.
-- `kv-replication/src/test/java/com/hkg/kv/replication/DigestReadCoordinatorTest.java` verifies digest agreement, mismatch detection, exception capture, and wrong-node response handling.
+- `kv-replication/src/test/java/com/hkg/kv/replication/DigestReadCoordinatorTest.java` verifies digest agreement, mismatch detection, exception capture, wrong-node response handling, and request-budget exhaustion semantics.
 
 ## Phase 4 Primitive Map
 
@@ -113,12 +114,12 @@ When the guide claims a mechanism exists, this companion must point to the file 
 - `kv-node/src/main/java/com/hkg/kv/node/RepairLeaseStoreConfig.java` parses repair lease backend properties for `in-memory` and `jdbc` modes.
 - `kv-node/src/main/java/com/hkg/kv/node/RepairLeaseStoreFactory.java` creates the selected `MerkleRepairLeaseStore` and initializes the JDBC schema when configured.
 - `kv-node/src/main/java/com/hkg/kv/node/DriverManagerDataSource.java` supplies a framework-neutral `DataSource` for the JDBC lease store until the full node runtime owns connection pooling.
-- `kv-node/src/main/java/com/hkg/kv/node/CoordinatorConfig.java` parses configured cluster nodes, ring-planning knobs, retry attempts, hint persistence settings, and the read-repair toggle from node properties.
+- `kv-node/src/main/java/com/hkg/kv/node/CoordinatorConfig.java` parses configured cluster nodes, ring-planning knobs, retry attempts, request-budget settings, hint persistence settings, and the read-repair toggle from node properties.
 - `kv-node/src/main/java/com/hkg/kv/node/HintReplayConfig.java` parses runtime-owned hint replay settings so the embedded node can control periodic replay cadence and retry backoff without changing repair semantics.
 - `kv-node/src/main/java/com/hkg/kv/node/CoordinatorReplicaPlanner.java` defines the planning seam between fixed coordinator routing and per-key ring placement.
 - `kv-node/src/main/java/com/hkg/kv/node/StaticCoordinatorReplicaPlanner.java` keeps the previous fixed-node coordinator behavior for local-only and compatibility cases.
 - `kv-node/src/main/java/com/hkg/kv/node/RingCoordinatorReplicaPlanner.java` derives per-key replication plans from `ConsistentHashReplicaPlacementPolicy`.
-- `kv-node/src/main/java/com/hkg/kv/node/CoordinatorService.java` routes external write/read requests through `ReplicationCoordinator` and `DigestReadCoordinator`, persists durable hints for failed planned writes, lets `ANY` succeed on hint durability, and invokes `ReadRepairExecutor` when digests mismatch.
+- `kv-node/src/main/java/com/hkg/kv/node/CoordinatorService.java` routes external write/read requests through `ReplicationCoordinator` and `DigestReadCoordinator`, propagates coordinator request budgets into replica fanout, persists durable hints for failed planned writes, lets `ANY` succeed on hint durability, and skips read repair when the shared request budget is already exhausted.
 - `kv-node/src/main/java/com/hkg/kv/node/RuntimeHintDelivery.java` resolves configured replay targets for due hints and reuses the transport client as the node-owned delivery seam.
 - `kv-node/src/main/java/com/hkg/kv/node/HttpCoordinatorHandlers.java` exposes coordinator write/read HTTP endpoints over the embedded JDK server.
 - `kv-node/src/main/java/com/hkg/kv/node/HttpCoordinatorClient.java` drives coordinator write/read requests for tests and future client wiring.
@@ -128,8 +129,8 @@ When the guide claims a mechanism exists, this companion must point to the file 
 - `kv-node/src/main/java/com/hkg/kv/node/KvNodeConfig.java` parses node ID, host/port, RocksDB path, request timeout, repair lease backend properties, coordinator routing settings, and runtime hint replay settings into one runtime config.
 - `kv-node/src/main/java/com/hkg/kv/node/KvNodeRuntime.java` opens RocksDB, wires the file-backed coordinator hint store, starts the embedded JDK HTTP server, registers coordinator plus replica/repair handlers, schedules periodic replay of due durable hints on a maintenance executor, and exposes one transport client plus the bound `ClusterNode`.
 - `kv-node/src/main/java/com/hkg/kv/node/KvNodeMain.java` loads a properties file and keeps the embedded node runtime alive until shutdown.
-- `kv-node/src/test/java/com/hkg/kv/node/CoordinatorConfigTest.java` verifies local-only defaults, static-versus-ring planning config parsing, hint-store path resolution, and invalid planner settings.
-- `kv-node/src/test/java/com/hkg/kv/node/HttpCoordinatorClientTest.java` verifies end-to-end ring-planned coordinator writes, ring-planned coordinator read repair, and `ANY` writes that succeed via durable hint recording when a planned replica is unavailable.
+- `kv-node/src/test/java/com/hkg/kv/node/CoordinatorConfigTest.java` verifies local-only defaults, static-versus-ring planning config parsing, request-budget parsing, hint-store path resolution, and invalid planner settings.
+- `kv-node/src/test/java/com/hkg/kv/node/HttpCoordinatorClientTest.java` verifies end-to-end ring-planned coordinator writes, ring-planned coordinator read repair, `ANY` writes that succeed via durable hint recording when a planned replica is unavailable, and coordinator request-budget enforcement over static replica routing.
 - `kv-node/src/test/java/com/hkg/kv/node/RepairLeaseStoreConfigTest.java` verifies property parsing and invalid backend handling.
 - `kv-node/src/test/java/com/hkg/kv/node/RepairLeaseStoreFactoryTest.java` verifies in-memory creation and initialized H2-backed JDBC lease creation.
 - `kv-node/src/test/java/com/hkg/kv/node/HttpReplicaTransportClientTest.java` verifies HTTP write/read/range streaming plus end-to-end Merkle repair over an embedded JDK `HttpServer`.
