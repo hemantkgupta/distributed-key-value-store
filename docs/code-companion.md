@@ -7,10 +7,10 @@ This file maps the future Complete Engineering Guide sections to code locations.
 | Foundation: API and data model | `kv-common`, `kv-storage-api` | Implemented for storage boundary, including repair scans |
 | Foundation: durable single-node storage | `kv-storage-rocksdb` | Implemented with RocksDB, including full local scans |
 | Foundation: token ring and vnodes | `kv-partitioning` | Implemented, including token ranges for repair windows |
-| Foundation: write/read path | `kv-replication` | In-process write fanout, retries, local-quorum filtering, and digest-read fanout implemented |
+| Foundation: write/read path | `kv-replication`, `kv-node` | In-process write fanout, retries, local-quorum filtering, digest-read fanout, and concrete HTTP transport adapters implemented |
 | Going Deeper: hinted handoff | `kv-repair` | Durable hint store, failed-write planner, replay/backoff worker, and metrics counters implemented |
 | Going Deeper: digest reads and read repair | `kv-storage-api`, `kv-storage-rocksdb`, `kv-replication`, `kv-repair` | Digest read result analysis, read-repair planning, write-boundary execution, and metrics counters implemented |
-| Going Deeper: Merkle anti-entropy | `kv-storage-api`, `kv-storage-rocksdb`, `kv-partitioning`, `kv-replication`, `kv-repair`, `kv-node` | Storage-backed tree construction, differing-range planning, local repair execution, per-run backpressure budgets, deterministic due-task scheduling, transport-agnostic range streaming, lease-guarded scheduling, JDBC durable lease backend, node-side backend selection, and metric samples implemented; concrete network transport/full node lifecycle integration planned |
+| Going Deeper: Merkle anti-entropy | `kv-storage-api`, `kv-storage-rocksdb`, `kv-partitioning`, `kv-replication`, `kv-repair`, `kv-node` | Storage-backed tree construction, differing-range planning, local repair execution, per-run backpressure budgets, deterministic due-task scheduling, transport-agnostic range streaming, concrete HTTP range streaming, lease-guarded scheduling, JDBC durable lease backend, node-side backend selection, and metric samples implemented; full node lifecycle integration planned |
 | Going Deeper: tombstones and TTL | `kv-storage-api`, `kv-storage-rocksdb` | Implemented as stored-record metadata |
 | At Scale: compaction debt | `kv-storage-rocksdb`, `kv-storage-toy-lsm`, `kv-bench` | RocksDB dependency in place; storage metrics planned |
 | At Scale: deterministic simulation | `kv-simulator` | Planned |
@@ -110,5 +110,9 @@ When the guide claims a mechanism exists, this companion must point to the file 
 - `kv-node/src/main/java/com/hkg/kv/node/RepairLeaseStoreConfig.java` parses repair lease backend properties for `in-memory` and `jdbc` modes.
 - `kv-node/src/main/java/com/hkg/kv/node/RepairLeaseStoreFactory.java` creates the selected `MerkleRepairLeaseStore` and initializes the JDBC schema when configured.
 - `kv-node/src/main/java/com/hkg/kv/node/DriverManagerDataSource.java` supplies a framework-neutral `DataSource` for the JDBC lease store until the full node runtime owns connection pooling.
+- `kv-node/src/main/java/com/hkg/kv/node/HttpReplicaTransportClient.java` implements `ReplicaWriter`, `ReplicaReader`, and `MerkleRangeStreamer` over JDK `HttpClient`.
+- `kv-node/src/main/java/com/hkg/kv/node/HttpReplicaTransportHandlers.java` exposes JDK `HttpHandler` endpoints for replica write, read, and streamed Merkle range repair operations.
+- `kv-node/src/main/java/com/hkg/kv/node/HttpReplicaTransportCodec.java` encodes binary mutation, record, token-range, and replica-response payloads without pulling in a JSON dependency.
 - `kv-node/src/test/java/com/hkg/kv/node/RepairLeaseStoreConfigTest.java` verifies property parsing and invalid backend handling.
 - `kv-node/src/test/java/com/hkg/kv/node/RepairLeaseStoreFactoryTest.java` verifies in-memory creation and initialized H2-backed JDBC lease creation.
+- `kv-node/src/test/java/com/hkg/kv/node/HttpReplicaTransportClientTest.java` verifies HTTP write/read/range streaming plus end-to-end Merkle repair over an embedded JDK `HttpServer`.

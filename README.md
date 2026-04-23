@@ -6,7 +6,7 @@ The project target is a Dynamo/Cassandra-style leaderless AP store with tunable 
 
 ## Current Scope
 
-This repository is at checkpoint 15: durable single-node storage, Phase 2 partitioning, bounded Phase 3 write/read replication primitives, and Phase 4 convergence primitives for hinted handoff, read repair execution, Merkle anti-entropy repair execution, repair backpressure, convergence metric export, deterministic Merkle repair scheduling, transport-agnostic Merkle range streaming, durable repair leases, and node-side repair lease backend wiring.
+This repository is at checkpoint 16: durable single-node storage, Phase 2 partitioning, bounded Phase 3 write/read replication primitives, and Phase 4 convergence primitives for hinted handoff, read repair execution, Merkle anti-entropy repair execution, repair backpressure, convergence metric export, deterministic Merkle repair scheduling, concrete HTTP transport for replica/repair flows, durable repair leases, and node-side lease backend wiring.
 
 Implemented:
 - `StorageEngine` contract.
@@ -43,8 +43,9 @@ Implemented:
 - Merkle repair lease contract, in-memory lease store with fencing tokens, and lease-guarded scheduler that skips tasks already owned by another worker.
 - JDBC-backed Merkle repair lease store with PostgreSQL-shaped schema initialization, row-level locking, active/inactive lease rows, and monotonic per-task fencing tokens across release/reacquire cycles.
 - `kv-node` repair lease backend configuration and factory wiring for `in-memory` or `jdbc` lease storage.
+- Concrete HTTP client/handler transport in `kv-node` for replica writes, digest/full reads, and streamed Merkle range repair using binary request/response payloads over JDK `HttpClient` and `HttpHandler`.
 
-Concrete HTTP/gRPC transport, timeout budgets, full node lifecycle integration, Micrometer/Prometheus binding, and repair task persistence come next.
+Timeout budgets, full node lifecycle integration, Micrometer/Prometheus binding, repair task persistence, and a gRPC alternative come next.
 
 Repair lease backend properties:
 
@@ -89,7 +90,7 @@ The scaled deployment target is a regional GKE cluster:
 - `kv-partitioning`: token ring, vnodes, ring epochs, and replica placement.
 - `kv-replication`: coordinator read/write flow and consistency-level wait policies.
 - `kv-repair`: hinted handoff, read repair, Merkle repair, and tombstone safety.
-- `kv-node`: node runtime.
+- `kv-node`: node runtime, HTTP transport adapters, and runtime wiring.
 - `kv-client`: client library and CLI-facing API.
 - `kv-admin`: ring/admin operations.
 - `kv-simulator`: deterministic failure simulation.
