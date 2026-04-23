@@ -1,6 +1,10 @@
 package com.hkg.kv.node;
 
 import com.hkg.kv.partitioning.ClusterNode;
+import com.hkg.kv.repair.FileHintStore;
+import com.hkg.kv.repair.HintStore;
+import com.hkg.kv.repair.HintedHandoffPlanner;
+import com.hkg.kv.repair.HintedHandoffService;
 import com.hkg.kv.repair.MerkleRangeStreamer;
 import com.hkg.kv.repair.MerkleRepairLeaseStore;
 import com.hkg.kv.replication.ReplicaReader;
@@ -22,6 +26,7 @@ public final class KvNodeRuntime implements AutoCloseable {
     private final KvNodeConfig config;
     private final StorageEngine storage;
     private final MerkleRepairLeaseStore repairLeaseStore;
+    private final HintStore hintStore;
     private final HttpReplicaTransportClient transportClient;
     private final CoordinatorService coordinatorService;
     private final HttpServer server;
@@ -33,6 +38,7 @@ public final class KvNodeRuntime implements AutoCloseable {
             KvNodeConfig config,
             StorageEngine storage,
             MerkleRepairLeaseStore repairLeaseStore,
+            HintStore hintStore,
             HttpReplicaTransportClient transportClient,
             CoordinatorService coordinatorService,
             HttpServer server,
@@ -42,6 +48,7 @@ public final class KvNodeRuntime implements AutoCloseable {
         this.config = config;
         this.storage = storage;
         this.repairLeaseStore = repairLeaseStore;
+        this.hintStore = hintStore;
         this.transportClient = transportClient;
         this.coordinatorService = coordinatorService;
         this.server = server;
@@ -81,15 +88,17 @@ public final class KvNodeRuntime implements AutoCloseable {
                     server.getAddress().getPort(),
                     Map.of()
             );
+            HintStore hintStore = new FileHintStore(config.coordinatorConfig().resolveHintStorePath(config.storagePath()));
             HttpReplicaTransportClient transportClient = new HttpReplicaTransportClient(
                     HttpClient.newHttpClient(),
                     config.requestTimeout()
             );
             CoordinatorService coordinatorService = new CoordinatorService(
-                    config.coordinatorConfig().resolveReplicas(localNode),
+                    config.coordinatorConfig().createReplicaPlanner(localNode),
                     config.coordinatorConfig(),
                     transportClient,
-                    transportClient
+                    transportClient,
+                    new HintedHandoffPlanner(new HintedHandoffService(hintStore))
             );
             HttpCoordinatorHandlers coordinatorHandlers = new HttpCoordinatorHandlers(coordinatorService);
             server.createContext(HttpCoordinatorPaths.COORDINATOR_WRITE_PATH, coordinatorHandlers.coordinatorWriteHandler());
@@ -98,6 +107,7 @@ public final class KvNodeRuntime implements AutoCloseable {
                     config,
                     storage,
                     repairLeaseStore,
+                    hintStore,
                     transportClient,
                     coordinatorService,
                     server,
@@ -137,6 +147,10 @@ public final class KvNodeRuntime implements AutoCloseable {
 
     public MerkleRepairLeaseStore repairLeaseStore() {
         return repairLeaseStore;
+    }
+
+    public HintStore hintStore() {
+        return hintStore;
     }
 
     public HttpReplicaTransportClient transportClient() {

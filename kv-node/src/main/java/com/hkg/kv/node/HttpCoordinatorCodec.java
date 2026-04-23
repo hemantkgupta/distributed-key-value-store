@@ -42,6 +42,7 @@ final class HttpCoordinatorCodec {
             out.writeBoolean(response.success());
             out.writeInt(response.acknowledgements());
             out.writeInt(response.acknowledgementsRequired());
+            out.writeInt(response.durableHintsRecorded());
             out.writeInt(response.totalAttempts());
             writeStringList(out, response.failedReplicaDetails());
         });
@@ -50,6 +51,7 @@ final class HttpCoordinatorCodec {
     static CoordinatorWriteResponse decodeWriteResponse(byte[] bytes) {
         return decode(bytes, in -> new CoordinatorWriteResponse(
                 in.readBoolean(),
+                in.readInt(),
                 in.readInt(),
                 in.readInt(),
                 in.readInt(),

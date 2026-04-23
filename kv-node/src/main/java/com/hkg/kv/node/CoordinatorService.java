@@ -2,6 +2,8 @@ package com.hkg.kv.node;
 
 import com.hkg.kv.common.ConsistencyLevel;
 import com.hkg.kv.partitioning.ClusterNode;
+import com.hkg.kv.repair.HintedHandoffPlanner;
+import com.hkg.kv.repair.HintRecord;
 import com.hkg.kv.repair.ReadRepairExecutor;
 import com.hkg.kv.repair.ReadRepairPlan;
 import com.hkg.kv.repair.ReadRepairPlanner;
@@ -23,28 +25,23 @@ import java.util.List;
 import java.util.Optional;
 
 public final class CoordinatorService {
-    private final List<ClusterNode> replicas;
+    private final CoordinatorReplicaPlanner replicaPlanner;
     private final CoordinatorConfig config;
     private final ReplicationCoordinator replicationCoordinator;
     private final DigestReadCoordinator digestReadCoordinator;
     private final ReadRepairPlanner readRepairPlanner;
     private final ReadRepairExecutor readRepairExecutor;
+    private final HintedHandoffPlanner hintedHandoffPlanner;
 
     public CoordinatorService(
-            List<ClusterNode> replicas,
+            CoordinatorReplicaPlanner replicaPlanner,
             CoordinatorConfig config,
             ReplicaWriter replicaWriter,
-            ReplicaReader replicaReader
+            ReplicaReader replicaReader,
+            HintedHandoffPlanner hintedHandoffPlanner
     ) {
-        if (replicas == null || replicas.isEmpty()) {
-            throw new IllegalArgumentException("coordinator replicas must not be empty");
-        }
-        ArrayList<ClusterNode> resolvedReplicas = new ArrayList<>(replicas.size());
-        for (ClusterNode replica : replicas) {
-            if (replica == null) {
-                throw new IllegalArgumentException("coordinator replicas must not contain null entries");
-            }
-            resolvedReplicas.add(replica);
+        if (replicaPlanner == null) {
+            throw new IllegalArgumentException("coordinator replica planner must not be null");
         }
         if (config == null) {
             throw new IllegalArgumentException("coordinator config must not be null");
@@ -55,27 +52,31 @@ public final class CoordinatorService {
         if (replicaReader == null) {
             throw new IllegalArgumentException("replica reader must not be null");
         }
-        this.replicas = List.copyOf(resolvedReplicas);
+        this.replicaPlanner = replicaPlanner;
         this.config = config;
         this.replicationCoordinator = new ReplicationCoordinator(replicaWriter);
         this.digestReadCoordinator = new DigestReadCoordinator(replicaReader);
         this.readRepairPlanner = new ReadRepairPlanner();
         this.readRepairExecutor = new ReadRepairExecutor(replicaWriter);
+        this.hintedHandoffPlanner = hintedHandoffPlanner;
     }
 
     public CoordinatorWriteResponse write(CoordinatorWriteRequest request) {
         if (request == null) {
             throw new IllegalArgumentException("coordinator write request must not be null");
         }
+        ReplicationPlan plan = replicaPlanner.plan(request.mutation().key(), request.consistencyLevel());
         ReplicationResult result = replicationCoordinator.replicate(
-                new ReplicationPlan(request.mutation().key(), replicas, request.consistencyLevel()),
+                plan,
                 request.mutation(),
-                replicationOptions(request.consistencyLevel())
+                replicationOptions(plan)
         );
+        int durableHintsRecorded = recordFailedReplicas(plan, request, result).size();
         return new CoordinatorWriteResponse(
-                result.consistencySatisfied(),
+                result.consistencySatisfied() || consistencySatisfiedByHint(result.waitPolicy(), durableHintsRecorded),
                 result.successfulAcknowledgements(),
                 result.waitPolicy().acknowledgementsRequired(),
+                durableHintsRecorded,
                 result.totalAttempts(),
                 replicaFailureDetails(result.failedResponses())
         );
@@ -85,14 +86,14 @@ public final class CoordinatorService {
         if (request == null) {
             throw new IllegalArgumentException("coordinator read request must not be null");
         }
-        ReplicationPlan plan = new ReplicationPlan(request.key(), replicas, request.consistencyLevel());
+        ReplicationPlan plan = replicaPlanner.plan(request.key(), request.consistencyLevel());
         DigestReadResult readResult = digestReadCoordinator.read(plan);
         ConsistencyWaitPolicy waitPolicy = ConsistencyWaitPolicy.forLevel(
                 request.consistencyLevel(),
-                replicas.size(),
-                resolveLocalReplicaCount(request.consistencyLevel())
+                plan.replicas().size(),
+                resolveLocalReplicaCount(plan)
         );
-        int successfulResponses = countSuccessfulResponses(readResult, request.consistencyLevel());
+        int successfulResponses = countSuccessfulResponses(readResult, plan);
         if (successfulResponses < waitPolicy.acknowledgementsRequired()) {
             return new CoordinatorReadResponse(
                     false,
@@ -111,7 +112,7 @@ public final class CoordinatorService {
         if (config.readRepairEnabled() && !readResult.digestsAgree()) {
             ReadRepairPlan repairPlan = readRepairPlanner.plan(readResult);
             if (repairPlan.requiresRepair()) {
-                repairResult = readRepairExecutor.execute(repairPlan, replicas);
+                repairResult = readRepairExecutor.execute(repairPlan, plan.replicas());
             }
         }
 
@@ -129,26 +130,30 @@ public final class CoordinatorService {
     }
 
     public List<ClusterNode> replicas() {
-        return replicas;
+        return replicaPlanner.clusterNodes();
     }
 
-    private ReplicationOptions replicationOptions(ConsistencyLevel consistencyLevel) {
+    public List<ClusterNode> clusterNodes() {
+        return replicaPlanner.clusterNodes();
+    }
+
+    private ReplicationOptions replicationOptions(ReplicationPlan plan) {
         ReplicationOptions options = ReplicationOptions.defaults().withMaxAttempts(config.maxAttempts());
-        if (consistencyLevel == ConsistencyLevel.LOCAL_QUORUM && config.localDatacenter() != null) {
+        if (plan.consistencyLevel() == ConsistencyLevel.LOCAL_QUORUM && config.localDatacenter() != null) {
             options = options.withLocalDatacenter(config.localDatacenter());
         }
         return options;
     }
 
-    private Integer resolveLocalReplicaCount(ConsistencyLevel consistencyLevel) {
-        if (consistencyLevel != ConsistencyLevel.LOCAL_QUORUM) {
+    private Integer resolveLocalReplicaCount(ReplicationPlan plan) {
+        if (plan.consistencyLevel() != ConsistencyLevel.LOCAL_QUORUM) {
             return null;
         }
         if (config.localDatacenter() == null) {
             throw new IllegalArgumentException("LOCAL_QUORUM requires kv.node.coordinator.local-datacenter");
         }
         int localReplicas = 0;
-        for (ClusterNode replica : replicas) {
+        for (ClusterNode replica : plan.replicas()) {
             String datacenter = replica.labels().get(ReplicationOptions.DATACENTER_LABEL);
             if (config.localDatacenter().equals(datacenter)) {
                 localReplicas++;
@@ -160,13 +165,13 @@ public final class CoordinatorService {
         return localReplicas;
     }
 
-    private int countSuccessfulResponses(DigestReadResult readResult, ConsistencyLevel consistencyLevel) {
-        if (consistencyLevel != ConsistencyLevel.LOCAL_QUORUM) {
+    private int countSuccessfulResponses(DigestReadResult readResult, ReplicationPlan plan) {
+        if (plan.consistencyLevel() != ConsistencyLevel.LOCAL_QUORUM) {
             return readResult.successfulResponses().size();
         }
         int localSuccesses = 0;
         for (ReplicaReadResponse response : readResult.successfulResponses()) {
-            ClusterNode replica = replicaByNodeId(response.nodeId().value());
+            ClusterNode replica = replicaByNodeId(plan.replicas(), response.nodeId().value());
             if (replica != null && config.localDatacenter().equals(replica.labels().get(ReplicationOptions.DATACENTER_LABEL))) {
                 localSuccesses++;
             }
@@ -174,13 +179,28 @@ public final class CoordinatorService {
         return localSuccesses;
     }
 
-    private ClusterNode replicaByNodeId(String nodeId) {
+    private static ClusterNode replicaByNodeId(List<ClusterNode> replicas, String nodeId) {
         for (ClusterNode replica : replicas) {
             if (replica.nodeId().value().equals(nodeId)) {
                 return replica;
             }
         }
         return null;
+    }
+
+    private List<HintRecord> recordFailedReplicas(
+            ReplicationPlan plan,
+            CoordinatorWriteRequest request,
+            ReplicationResult result
+    ) {
+        if (!config.hintedHandoffEnabled() || hintedHandoffPlanner == null || result.failedResponses().isEmpty()) {
+            return List.of();
+        }
+        return hintedHandoffPlanner.recordFailedReplicas(plan, request.mutation(), result);
+    }
+
+    private static boolean consistencySatisfiedByHint(ConsistencyWaitPolicy waitPolicy, int durableHintsRecorded) {
+        return waitPolicy.hintMaySatisfyAcknowledgement() && durableHintsRecorded > 0;
     }
 
     private static Optional<StoredRecord> latestRecord(DigestReadResult readResult) {

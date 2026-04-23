@@ -22,9 +22,9 @@ class HttpCoordinatorClientTest {
     Path tempDir;
 
     @Test
-    void writesThroughCoordinatorEndpointToConfiguredReplicas() {
+    void writesThroughCoordinatorEndpointToRingPlannedReplicas() {
         try (KvNodeRuntime nodeB = KvNodeRuntime.start(KvNodeConfig.fromProperties(baseProperties("node-b", tempDir.resolve("node-b"))));
-             KvNodeRuntime nodeA = KvNodeRuntime.start(KvNodeConfig.fromProperties(coordinatorProperties(
+             KvNodeRuntime nodeA = KvNodeRuntime.start(KvNodeConfig.fromProperties(replicatedRingProperties(
                      "node-a",
                      tempDir.resolve("node-a"),
                      nodeB.localNode().port()
@@ -40,15 +40,16 @@ class HttpCoordinatorClientTest {
 
             assertThat(response.success()).isTrue();
             assertThat(response.acknowledgements()).isEqualTo(2);
+            assertThat(response.durableHintsRecorded()).isZero();
             assertThat(nodeA.storage().get(key)).contains(StoredRecord.from(mutation));
             assertThat(nodeB.storage().get(key)).contains(StoredRecord.from(mutation));
         }
     }
 
     @Test
-    void readsThroughCoordinatorEndpointAndRepairsStaleReplica() {
+    void readsThroughCoordinatorEndpointAndRepairsStaleReplicaFromRingPlan() {
         try (KvNodeRuntime nodeB = KvNodeRuntime.start(KvNodeConfig.fromProperties(baseProperties("node-b", tempDir.resolve("node-b"))));
-             KvNodeRuntime nodeA = KvNodeRuntime.start(KvNodeConfig.fromProperties(coordinatorProperties(
+             KvNodeRuntime nodeA = KvNodeRuntime.start(KvNodeConfig.fromProperties(replicatedRingProperties(
                      "node-a",
                      tempDir.resolve("node-a"),
                      nodeB.localNode().port()
@@ -73,6 +74,41 @@ class HttpCoordinatorClientTest {
         }
     }
 
+    @Test
+    void writesAtAnyAndPersistsHintWhenRingReplicaIsUnavailable() {
+        int unavailablePort;
+        try (KvNodeRuntime nodeB = KvNodeRuntime.start(KvNodeConfig.fromProperties(baseProperties("node-b", tempDir.resolve("offline-node"))))) {
+            unavailablePort = nodeB.localNode().port();
+        }
+
+        try (KvNodeRuntime nodeA = KvNodeRuntime.start(KvNodeConfig.fromProperties(hintOnlyRingProperties(
+                "node-a",
+                tempDir.resolve("node-a"),
+                unavailablePort
+        )))) {
+            HttpCoordinatorClient client = new HttpCoordinatorClient();
+            Key key = Key.utf8("user:hinted");
+            MutationRecord mutation = put(key, "queued-for-hint", 3);
+
+            CoordinatorWriteResponse response = client.write(
+                    nodeA.localNode(),
+                    new CoordinatorWriteRequest(mutation, ConsistencyLevel.ANY)
+            );
+
+            assertThat(response.success()).isTrue();
+            assertThat(response.acknowledgements()).isZero();
+            assertThat(response.acknowledgementsRequired()).isEqualTo(1);
+            assertThat(response.durableHintsRecorded()).isEqualTo(1);
+            assertThat(nodeA.storage().get(key)).isEmpty();
+            assertThat(nodeA.hintStore().loadAll())
+                    .singleElement()
+                    .satisfies(hint -> {
+                        assertThat(hint.targetNodeId().value()).isEqualTo("node-b");
+                        assertThat(hint.mutation()).isEqualTo(mutation);
+                    });
+        }
+    }
+
     private static Properties baseProperties(String nodeId, Path storagePath) {
         Properties properties = new Properties();
         properties.setProperty(KvNodeConfig.NODE_ID_PROPERTY, nodeId);
@@ -82,17 +118,33 @@ class HttpCoordinatorClientTest {
         return properties;
     }
 
-    private static Properties coordinatorProperties(String nodeId, Path storagePath, int otherPort) {
+    private static Properties replicatedRingProperties(String nodeId, Path storagePath, int otherPort) {
         Properties properties = baseProperties(nodeId, storagePath);
-        properties.setProperty(CoordinatorConfig.REPLICA_COUNT_PROPERTY, "2");
+        properties.setProperty(CoordinatorConfig.NODE_COUNT_PROPERTY, "2");
         properties.setProperty(CoordinatorConfig.LOCAL_DATACENTER_PROPERTY, "dc-a");
-        properties.setProperty(CoordinatorConfig.REPLICA_PREFIX + "0.node-id", nodeId);
-        properties.setProperty(CoordinatorConfig.REPLICA_PREFIX + "0.self", "true");
-        properties.setProperty(CoordinatorConfig.REPLICA_PREFIX + "0.datacenter", "dc-a");
-        properties.setProperty(CoordinatorConfig.REPLICA_PREFIX + "1.node-id", "node-b");
-        properties.setProperty(CoordinatorConfig.REPLICA_PREFIX + "1.host", "127.0.0.1");
-        properties.setProperty(CoordinatorConfig.REPLICA_PREFIX + "1.port", Integer.toString(otherPort));
-        properties.setProperty(CoordinatorConfig.REPLICA_PREFIX + "1.datacenter", "dc-a");
+        properties.setProperty(CoordinatorConfig.NODE_PREFIX + "0.node-id", nodeId);
+        properties.setProperty(CoordinatorConfig.NODE_PREFIX + "0.self", "true");
+        properties.setProperty(CoordinatorConfig.NODE_PREFIX + "0.datacenter", "dc-a");
+        properties.setProperty(CoordinatorConfig.NODE_PREFIX + "1.node-id", "node-b");
+        properties.setProperty(CoordinatorConfig.NODE_PREFIX + "1.host", "127.0.0.1");
+        properties.setProperty(CoordinatorConfig.NODE_PREFIX + "1.port", Integer.toString(otherPort));
+        properties.setProperty(CoordinatorConfig.NODE_PREFIX + "1.datacenter", "dc-a");
+        properties.setProperty(CoordinatorConfig.REPLICATION_FACTOR_PROPERTY, "2");
+        properties.setProperty(CoordinatorConfig.VNODE_COUNT_PROPERTY, "16");
+        properties.setProperty(CoordinatorConfig.RING_EPOCH_PROPERTY, "7");
+        return properties;
+    }
+
+    private static Properties hintOnlyRingProperties(String nodeId, Path storagePath, int unavailablePort) {
+        Properties properties = baseProperties(nodeId, storagePath);
+        properties.setProperty(CoordinatorConfig.NODE_COUNT_PROPERTY, "1");
+        properties.setProperty(CoordinatorConfig.NODE_PREFIX + "0.node-id", "node-b");
+        properties.setProperty(CoordinatorConfig.NODE_PREFIX + "0.host", "127.0.0.1");
+        properties.setProperty(CoordinatorConfig.NODE_PREFIX + "0.port", Integer.toString(unavailablePort));
+        properties.setProperty(CoordinatorConfig.REPLICATION_FACTOR_PROPERTY, "1");
+        properties.setProperty(CoordinatorConfig.VNODE_COUNT_PROPERTY, "8");
+        properties.setProperty(CoordinatorConfig.RING_EPOCH_PROPERTY, "5");
+        properties.setProperty(KvNodeConfig.REQUEST_TIMEOUT_PROPERTY, "PT0.25S");
         return properties;
     }
 

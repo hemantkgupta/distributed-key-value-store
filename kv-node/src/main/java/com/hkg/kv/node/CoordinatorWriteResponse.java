@@ -6,6 +6,7 @@ public record CoordinatorWriteResponse(
         boolean success,
         int acknowledgements,
         int acknowledgementsRequired,
+        int durableHintsRecorded,
         int totalAttempts,
         List<String> failedReplicaDetails
 ) {
@@ -15,6 +16,9 @@ public record CoordinatorWriteResponse(
         }
         if (acknowledgementsRequired < 0) {
             throw new IllegalArgumentException("acknowledgements required must not be negative");
+        }
+        if (durableHintsRecorded < 0) {
+            throw new IllegalArgumentException("durable hints recorded must not be negative");
         }
         if (totalAttempts < 0) {
             throw new IllegalArgumentException("total attempts must not be negative");

@@ -49,8 +49,8 @@
 - Added node-side repair lease backend configuration and factory wiring so runtime properties can select `in-memory` or `jdbc` leases.
 - Added concrete HTTP transport adapters and handlers for replica writes, digest/full reads, and streamed Merkle range repair using binary payloads over the JDK HTTP stack.
 - Added a property-backed embedded node runtime that opens RocksDB storage, starts a JDK HTTP server, registers replica/repair handlers, exposes the actual bound `ClusterNode`, and wires the selected repair lease backend into one lifecycle.
-- Added coordinator config, service, and HTTP endpoints so external write/read requests can route across a property-configured static replica set, enforce consistency levels, and trigger read repair on digest mismatch.
-- Add timeout budgets, repair task persistence, ring-driven replica planning, repair tick orchestration, Compose/GKE runtime packaging, and a gRPC alternative.
+- Added coordinator config, static/ring replica planners, service, and HTTP endpoints so external write/read requests can route across configured cluster nodes, derive per-key replica plans from the consistent-hash ring when configured, persist durable hints for failed planned replicas, satisfy `ANY` through coordinator-side hint recording, and trigger read repair on digest mismatch.
+- Add timeout budgets, repair task persistence, hint replay scheduling in the runtime, repair tick orchestration, Compose/GKE runtime packaging, and a gRPC alternative.
 - Add Micrometer/Prometheus binding, alerting, and repair lag/dropped-hint counters.
 
 ## Phase 5: Topology Change

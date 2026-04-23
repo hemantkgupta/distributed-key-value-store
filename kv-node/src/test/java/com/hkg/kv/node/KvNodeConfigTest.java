@@ -51,6 +51,32 @@ class KvNodeConfigTest {
     }
 
     @Test
+    void parsesRingCoordinatorSettings() {
+        Properties properties = new Properties();
+        properties.setProperty(KvNodeConfig.NODE_ID_PROPERTY, "node-a");
+        properties.setProperty(KvNodeConfig.STORAGE_PATH_PROPERTY, tempDir.resolve("rocksdb").toString());
+        properties.setProperty(CoordinatorConfig.NODE_COUNT_PROPERTY, "2");
+        properties.setProperty(CoordinatorConfig.NODE_PREFIX + "0.node-id", "node-a");
+        properties.setProperty(CoordinatorConfig.NODE_PREFIX + "0.self", "true");
+        properties.setProperty(CoordinatorConfig.NODE_PREFIX + "1.node-id", "node-b");
+        properties.setProperty(CoordinatorConfig.NODE_PREFIX + "1.host", "127.0.0.1");
+        properties.setProperty(CoordinatorConfig.NODE_PREFIX + "1.port", "9043");
+        properties.setProperty(CoordinatorConfig.REPLICATION_FACTOR_PROPERTY, "2");
+        properties.setProperty(CoordinatorConfig.VNODE_COUNT_PROPERTY, "48");
+        properties.setProperty(CoordinatorConfig.RING_EPOCH_PROPERTY, "9");
+        properties.setProperty(CoordinatorConfig.HINT_STORE_PATH_PROPERTY, tempDir.resolve("pending-hints.log").toString());
+
+        KvNodeConfig config = KvNodeConfig.fromProperties(properties);
+
+        assertThat(config.coordinatorConfig().ringDrivenPlanningEnabled()).isTrue();
+        assertThat(config.coordinatorConfig().replicationFactor()).isEqualTo(2);
+        assertThat(config.coordinatorConfig().vnodeCount()).isEqualTo(48);
+        assertThat(config.coordinatorConfig().ringEpoch()).isEqualTo(9L);
+        assertThat(config.coordinatorConfig().resolveHintStorePath(tempDir.resolve("other")))
+                .isEqualTo(tempDir.resolve("pending-hints.log"));
+    }
+
+    @Test
     void rejectsMissingStoragePath() {
         Properties properties = new Properties();
         properties.setProperty(KvNodeConfig.NODE_ID_PROPERTY, "node-a");
