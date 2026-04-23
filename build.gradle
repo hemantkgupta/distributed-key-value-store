@@ -81,5 +81,7 @@ project(':kv-node') {
         implementation project(':kv-replication')
         implementation project(':kv-repair')
         implementation project(':kv-membership')
+        runtimeOnly 'org.postgresql:postgresql:42.7.4'
+        testImplementation 'com.h2database:h2:2.2.224'
     }
 }

@@ -46,7 +46,8 @@
 - Added transport-agnostic Merkle range streaming and a remote repair executor that streams records from replica nodes and applies repair mutations through the existing replica write boundary.
 - Added Merkle repair lease coordination primitives: lease store contract, in-memory lease store, fencing tokens, lease-not-acquired status, and lease-guarded scheduler for avoiding duplicate repair work across workers.
 - Added JDBC-backed durable lease store for PostgreSQL-shaped repair coordination: schema initialization, row-level locking, active/inactive rows, and monotonic fencing tokens across release/reacquire cycles.
-- Add concrete HTTP/gRPC range streaming, timeout budgets, and runtime wiring for the JDBC lease store.
+- Added node-side repair lease backend configuration and factory wiring so runtime properties can select `in-memory` or `jdbc` leases.
+- Add concrete HTTP/gRPC range streaming, timeout budgets, repair task persistence, and full node lifecycle integration.
 - Add Micrometer/Prometheus binding, alerting, and repair lag/dropped-hint counters.
 
 ## Phase 5: Topology Change

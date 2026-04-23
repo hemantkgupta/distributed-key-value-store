@@ -6,7 +6,7 @@ The project target is a Dynamo/Cassandra-style leaderless AP store with tunable 
 
 ## Current Scope
 
-This repository is at checkpoint 14: durable single-node storage, Phase 2 partitioning, bounded Phase 3 write/read replication primitives, and Phase 4 convergence primitives for hinted handoff, read repair execution, Merkle anti-entropy repair execution, repair backpressure, convergence metric export, deterministic Merkle repair scheduling, transport-agnostic Merkle range streaming, and durable repair leases.
+This repository is at checkpoint 15: durable single-node storage, Phase 2 partitioning, bounded Phase 3 write/read replication primitives, and Phase 4 convergence primitives for hinted handoff, read repair execution, Merkle anti-entropy repair execution, repair backpressure, convergence metric export, deterministic Merkle repair scheduling, transport-agnostic Merkle range streaming, durable repair leases, and node-side repair lease backend wiring.
 
 Implemented:
 - `StorageEngine` contract.
@@ -42,8 +42,20 @@ Implemented:
 - Transport-agnostic Merkle range streaming boundary and remote repair executor that streams range records from replica nodes and writes repair mutations through `ReplicaWriter`.
 - Merkle repair lease contract, in-memory lease store with fencing tokens, and lease-guarded scheduler that skips tasks already owned by another worker.
 - JDBC-backed Merkle repair lease store with PostgreSQL-shaped schema initialization, row-level locking, active/inactive lease rows, and monotonic per-task fencing tokens across release/reacquire cycles.
+- `kv-node` repair lease backend configuration and factory wiring for `in-memory` or `jdbc` lease storage.
 
-Concrete HTTP/gRPC transport, timeout budgets, runtime datasource wiring, Micrometer/Prometheus binding, and node-runtime integration come next.
+Concrete HTTP/gRPC transport, timeout budgets, full node lifecycle integration, Micrometer/Prometheus binding, and repair task persistence come next.
+
+Repair lease backend properties:
+
+| Property | Default | Meaning |
+|---|---|---|
+| `kv.repair.lease.backend` | `in-memory` | `in-memory` for local simulation or `jdbc` for durable PostgreSQL-backed leases |
+| `kv.repair.lease.jdbc.url` | none | JDBC URL required when backend is `jdbc` |
+| `kv.repair.lease.jdbc.username` | none | Optional JDBC username |
+| `kv.repair.lease.jdbc.password` | empty | Optional JDBC password |
+| `kv.repair.lease.jdbc.table` | `kv_merkle_repair_leases` | Lease table name |
+| `kv.repair.lease.jdbc.initialize-schema` | `true` for JDBC | Whether the node should create the lease table on startup |
 
 ## Planned Local Runtime
 

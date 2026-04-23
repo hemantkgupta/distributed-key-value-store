@@ -10,7 +10,7 @@ This file maps the future Complete Engineering Guide sections to code locations.
 | Foundation: write/read path | `kv-replication` | In-process write fanout, retries, local-quorum filtering, and digest-read fanout implemented |
 | Going Deeper: hinted handoff | `kv-repair` | Durable hint store, failed-write planner, replay/backoff worker, and metrics counters implemented |
 | Going Deeper: digest reads and read repair | `kv-storage-api`, `kv-storage-rocksdb`, `kv-replication`, `kv-repair` | Digest read result analysis, read-repair planning, write-boundary execution, and metrics counters implemented |
-| Going Deeper: Merkle anti-entropy | `kv-storage-api`, `kv-storage-rocksdb`, `kv-partitioning`, `kv-replication`, `kv-repair` | Storage-backed tree construction, differing-range planning, local repair execution, per-run backpressure budgets, deterministic due-task scheduling, transport-agnostic range streaming, lease-guarded scheduling, JDBC durable lease backend, and metric samples implemented; concrete network transport/runtime datasource wiring planned |
+| Going Deeper: Merkle anti-entropy | `kv-storage-api`, `kv-storage-rocksdb`, `kv-partitioning`, `kv-replication`, `kv-repair`, `kv-node` | Storage-backed tree construction, differing-range planning, local repair execution, per-run backpressure budgets, deterministic due-task scheduling, transport-agnostic range streaming, lease-guarded scheduling, JDBC durable lease backend, node-side backend selection, and metric samples implemented; concrete network transport/full node lifecycle integration planned |
 | Going Deeper: tombstones and TTL | `kv-storage-api`, `kv-storage-rocksdb` | Implemented as stored-record metadata |
 | At Scale: compaction debt | `kv-storage-rocksdb`, `kv-storage-toy-lsm`, `kv-bench` | RocksDB dependency in place; storage metrics planned |
 | At Scale: deterministic simulation | `kv-simulator` | Planned |
@@ -104,3 +104,11 @@ When the guide claims a mechanism exists, this companion must point to the file 
 - `kv-repair/src/test/java/com/hkg/kv/repair/InMemoryMerkleRepairLeaseStoreTest.java` verifies lease acquisition, lease contention, expiry takeover with higher fencing token, and release-by-matching-token semantics.
 - `kv-repair/src/test/java/com/hkg/kv/repair/JdbcMerkleRepairLeaseStoreTest.java` verifies schema initialization, cross-instance lease contention, expired lease takeover, owner/token release protection, and monotonic fencing tokens after release.
 - `kv-repair/src/test/java/com/hkg/kv/repair/LeasedMerkleRepairSchedulerTest.java` verifies lease acquisition/release around successful repair, lease-held skip behavior, expired-lease takeover, and task-budget deferral without lease acquisition.
+
+## Runtime Wiring Map
+
+- `kv-node/src/main/java/com/hkg/kv/node/RepairLeaseStoreConfig.java` parses repair lease backend properties for `in-memory` and `jdbc` modes.
+- `kv-node/src/main/java/com/hkg/kv/node/RepairLeaseStoreFactory.java` creates the selected `MerkleRepairLeaseStore` and initializes the JDBC schema when configured.
+- `kv-node/src/main/java/com/hkg/kv/node/DriverManagerDataSource.java` supplies a framework-neutral `DataSource` for the JDBC lease store until the full node runtime owns connection pooling.
+- `kv-node/src/test/java/com/hkg/kv/node/RepairLeaseStoreConfigTest.java` verifies property parsing and invalid backend handling.
+- `kv-node/src/test/java/com/hkg/kv/node/RepairLeaseStoreFactoryTest.java` verifies in-memory creation and initialized H2-backed JDBC lease creation.
