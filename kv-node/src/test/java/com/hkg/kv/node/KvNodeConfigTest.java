@@ -27,6 +27,7 @@ class KvNodeConfigTest {
         assertThat(config.storagePath()).isEqualTo(tempDir.resolve("rocksdb"));
         assertThat(config.requestTimeout()).isEqualTo(KvNodeConfig.DEFAULT_REQUEST_TIMEOUT);
         assertThat(config.repairLeaseStoreConfig()).isEqualTo(RepairLeaseStoreConfig.inMemory());
+        assertThat(config.coordinatorConfig()).isEqualTo(CoordinatorConfig.localOnly());
     }
 
     @Test
@@ -46,6 +47,7 @@ class KvNodeConfigTest {
         assertThat(config.requestTimeout()).isEqualTo(Duration.ofSeconds(3));
         assertThat(config.repairLeaseStoreConfig().backend()).isEqualTo(RepairLeaseStoreBackend.JDBC);
         assertThat(config.repairLeaseStoreConfig().jdbcUrl()).isEqualTo("jdbc:h2:mem:kv-node;MODE=PostgreSQL");
+        assertThat(config.coordinatorConfig()).isEqualTo(CoordinatorConfig.localOnly());
     }
 
     @Test

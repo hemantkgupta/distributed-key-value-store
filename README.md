@@ -6,7 +6,7 @@ The project target is a Dynamo/Cassandra-style leaderless AP store with tunable 
 
 ## Current Scope
 
-This repository is at checkpoint 17: durable single-node storage, Phase 2 partitioning, bounded Phase 3 write/read replication primitives, and Phase 4 convergence primitives for hinted handoff, read repair execution, Merkle anti-entropy repair execution, repair backpressure, convergence metric export, deterministic Merkle repair scheduling, concrete HTTP transport for replica/repair flows, durable repair leases, node-side lease backend wiring, and an embedded HTTP node runtime.
+This repository is at checkpoint 18: durable single-node storage, Phase 2 partitioning, bounded Phase 3 write/read replication primitives, and Phase 4 convergence primitives for hinted handoff, read repair execution, Merkle anti-entropy repair execution, repair backpressure, convergence metric export, deterministic Merkle repair scheduling, concrete HTTP transport for replica/repair flows, durable repair leases, node-side lease backend wiring, an embedded HTTP node runtime, and external coordinator write/read endpoints over a static replica set.
 
 Implemented:
 - `StorageEngine` contract.
@@ -45,8 +45,9 @@ Implemented:
 - `kv-node` repair lease backend configuration and factory wiring for `in-memory` or `jdbc` lease storage.
 - Concrete HTTP client/handler transport in `kv-node` for replica writes, digest/full reads, and streamed Merkle range repair using binary request/response payloads over JDK `HttpClient` and `HttpHandler`.
 - Property-backed embedded `kv-node` runtime that opens RocksDB storage, starts a JDK `HttpServer`, registers fixed replica/repair endpoints, returns the actual bound `ClusterNode`, and wires the selected repair lease backend into one lifecycle.
+- Coordinator config, service, client, and HTTP handlers in `kv-node` that route external write/read requests across a property-configured static replica set, enforce requested consistency levels, and run opportunistic read repair on digest mismatch.
 
-Coordinator request routing, repair tick orchestration, Micrometer/Prometheus binding, repair task persistence, Docker Compose/GKE runtime packaging, and a gRPC alternative come next.
+Ring-driven replica planning, hinted-handoff wiring in the runtime, repair tick orchestration, Micrometer/Prometheus binding, repair task persistence, Docker Compose/GKE runtime packaging, and a gRPC alternative come next.
 
 Node runtime properties:
 
@@ -57,6 +58,20 @@ Node runtime properties:
 | `kv.node.port` | `8080` | HTTP bind port; use `0` for an ephemeral test port |
 | `kv.node.storage.rocksdb.path` | none | Local RocksDB directory for this node |
 | `kv.node.http.request-timeout` | `PT5S` | Outbound replica/repair HTTP timeout |
+
+Coordinator routing properties:
+
+| Property | Default | Meaning |
+|---|---|---|
+| `kv.node.coordinator.replica-count` | `0` | Number of static replica entries; `0` means local-node-only coordinator routing |
+| `kv.node.coordinator.replicas.<i>.node-id` | none | Replica node identifier for entry `i` |
+| `kv.node.coordinator.replicas.<i>.self` | `false` | Whether entry `i` should resolve to the local bound node |
+| `kv.node.coordinator.replicas.<i>.host` | none | Remote replica host for non-self entries |
+| `kv.node.coordinator.replicas.<i>.port` | none | Remote replica port for non-self entries |
+| `kv.node.coordinator.replicas.<i>.datacenter` | none | Datacenter label used for `LOCAL_QUORUM` counting |
+| `kv.node.coordinator.local-datacenter` | none | Local datacenter name required for `LOCAL_QUORUM` coordinator requests |
+| `kv.node.coordinator.max-attempts` | `1` | Per-replica retry attempts for coordinator writes |
+| `kv.node.coordinator.read-repair-enabled` | `true` | Whether digest mismatch triggers coordinator-side read repair |
 
 Repair lease backend properties:
 

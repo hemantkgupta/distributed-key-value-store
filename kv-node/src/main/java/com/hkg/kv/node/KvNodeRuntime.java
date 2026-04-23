@@ -23,6 +23,7 @@ public final class KvNodeRuntime implements AutoCloseable {
     private final StorageEngine storage;
     private final MerkleRepairLeaseStore repairLeaseStore;
     private final HttpReplicaTransportClient transportClient;
+    private final CoordinatorService coordinatorService;
     private final HttpServer server;
     private final ExecutorService requestExecutor;
     private final ClusterNode localNode;
@@ -33,6 +34,7 @@ public final class KvNodeRuntime implements AutoCloseable {
             StorageEngine storage,
             MerkleRepairLeaseStore repairLeaseStore,
             HttpReplicaTransportClient transportClient,
+            CoordinatorService coordinatorService,
             HttpServer server,
             ExecutorService requestExecutor,
             ClusterNode localNode
@@ -41,6 +43,7 @@ public final class KvNodeRuntime implements AutoCloseable {
         this.storage = storage;
         this.repairLeaseStore = repairLeaseStore;
         this.transportClient = transportClient;
+        this.coordinatorService = coordinatorService;
         this.server = server;
         this.requestExecutor = requestExecutor;
         this.localNode = localNode;
@@ -82,11 +85,21 @@ public final class KvNodeRuntime implements AutoCloseable {
                     HttpClient.newHttpClient(),
                     config.requestTimeout()
             );
+            CoordinatorService coordinatorService = new CoordinatorService(
+                    config.coordinatorConfig().resolveReplicas(localNode),
+                    config.coordinatorConfig(),
+                    transportClient,
+                    transportClient
+            );
+            HttpCoordinatorHandlers coordinatorHandlers = new HttpCoordinatorHandlers(coordinatorService);
+            server.createContext(HttpCoordinatorPaths.COORDINATOR_WRITE_PATH, coordinatorHandlers.coordinatorWriteHandler());
+            server.createContext(HttpCoordinatorPaths.COORDINATOR_READ_PATH, coordinatorHandlers.coordinatorReadHandler());
             return new KvNodeRuntime(
                     config,
                     storage,
                     repairLeaseStore,
                     transportClient,
+                    coordinatorService,
                     server,
                     requestExecutor,
                     localNode
@@ -128,6 +141,10 @@ public final class KvNodeRuntime implements AutoCloseable {
 
     public HttpReplicaTransportClient transportClient() {
         return transportClient;
+    }
+
+    public CoordinatorService coordinatorService() {
+        return coordinatorService;
     }
 
     public ReplicaWriter replicaWriter() {

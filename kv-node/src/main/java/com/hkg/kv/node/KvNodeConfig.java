@@ -12,7 +12,8 @@ public record KvNodeConfig(
         int port,
         Path storagePath,
         Duration requestTimeout,
-        RepairLeaseStoreConfig repairLeaseStoreConfig
+        RepairLeaseStoreConfig repairLeaseStoreConfig,
+        CoordinatorConfig coordinatorConfig
 ) {
     public static final String NODE_ID_PROPERTY = "kv.node.id";
     public static final String HOST_PROPERTY = "kv.node.host";
@@ -43,6 +44,9 @@ public record KvNodeConfig(
         if (repairLeaseStoreConfig == null) {
             throw new IllegalArgumentException("repair lease store config must not be null");
         }
+        if (coordinatorConfig == null) {
+            throw new IllegalArgumentException("coordinator config must not be null");
+        }
     }
 
     public static KvNodeConfig fromProperties(Properties properties) {
@@ -55,7 +59,8 @@ public record KvNodeConfig(
                 parsePort(properties.getProperty(PORT_PROPERTY)),
                 Path.of(requiredProperty(properties, STORAGE_PATH_PROPERTY)),
                 parseDuration(properties.getProperty(REQUEST_TIMEOUT_PROPERTY, DEFAULT_REQUEST_TIMEOUT.toString())),
-                RepairLeaseStoreConfig.fromProperties(properties)
+                RepairLeaseStoreConfig.fromProperties(properties),
+                CoordinatorConfig.fromProperties(properties)
         );
     }
 
