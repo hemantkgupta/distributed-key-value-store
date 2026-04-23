@@ -113,6 +113,11 @@ When the guide claims a mechanism exists, this companion must point to the file 
 - `kv-node/src/main/java/com/hkg/kv/node/HttpReplicaTransportClient.java` implements `ReplicaWriter`, `ReplicaReader`, and `MerkleRangeStreamer` over JDK `HttpClient`.
 - `kv-node/src/main/java/com/hkg/kv/node/HttpReplicaTransportHandlers.java` exposes JDK `HttpHandler` endpoints for replica write, read, and streamed Merkle range repair operations.
 - `kv-node/src/main/java/com/hkg/kv/node/HttpReplicaTransportCodec.java` encodes binary mutation, record, token-range, and replica-response payloads without pulling in a JSON dependency.
+- `kv-node/src/main/java/com/hkg/kv/node/KvNodeConfig.java` parses node ID, host/port, RocksDB path, request timeout, and repair lease backend properties into one runtime config.
+- `kv-node/src/main/java/com/hkg/kv/node/KvNodeRuntime.java` opens RocksDB, starts the embedded JDK HTTP server, registers replica/repair handlers, and exposes one transport client plus the bound `ClusterNode`.
+- `kv-node/src/main/java/com/hkg/kv/node/KvNodeMain.java` loads a properties file and keeps the embedded node runtime alive until shutdown.
 - `kv-node/src/test/java/com/hkg/kv/node/RepairLeaseStoreConfigTest.java` verifies property parsing and invalid backend handling.
 - `kv-node/src/test/java/com/hkg/kv/node/RepairLeaseStoreFactoryTest.java` verifies in-memory creation and initialized H2-backed JDBC lease creation.
 - `kv-node/src/test/java/com/hkg/kv/node/HttpReplicaTransportClientTest.java` verifies HTTP write/read/range streaming plus end-to-end Merkle repair over an embedded JDK `HttpServer`.
+- `kv-node/src/test/java/com/hkg/kv/node/KvNodeConfigTest.java` verifies node runtime property parsing, defaults, and invalid timeout handling.
+- `kv-node/src/test/java/com/hkg/kv/node/KvNodeRuntimeTest.java` verifies embedded runtime startup, self-directed HTTP write/read/stream operations, and JDBC lease backend wiring.
