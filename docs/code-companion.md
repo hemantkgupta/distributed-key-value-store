@@ -10,7 +10,7 @@ This file maps the future Complete Engineering Guide sections to code locations.
 | Foundation: write/read path | `kv-replication` | In-process write fanout, retries, local-quorum filtering, and digest-read fanout implemented |
 | Going Deeper: hinted handoff | `kv-repair` | Durable hint store, failed-write planner, replay/backoff worker, and metrics counters implemented |
 | Going Deeper: digest reads and read repair | `kv-storage-api`, `kv-storage-rocksdb`, `kv-replication`, `kv-repair` | Digest read result analysis, read-repair planning, write-boundary execution, and metrics counters implemented |
-| Going Deeper: Merkle anti-entropy | `kv-storage-api`, `kv-storage-rocksdb`, `kv-partitioning`, `kv-replication`, `kv-repair` | Storage-backed tree construction, differing-range planning, local repair execution, per-run backpressure budgets, deterministic due-task scheduling, transport-agnostic range streaming, lease-guarded scheduling, and metric samples implemented; concrete network transport/durable lease backend planned |
+| Going Deeper: Merkle anti-entropy | `kv-storage-api`, `kv-storage-rocksdb`, `kv-partitioning`, `kv-replication`, `kv-repair` | Storage-backed tree construction, differing-range planning, local repair execution, per-run backpressure budgets, deterministic due-task scheduling, transport-agnostic range streaming, lease-guarded scheduling, JDBC durable lease backend, and metric samples implemented; concrete network transport/runtime datasource wiring planned |
 | Going Deeper: tombstones and TTL | `kv-storage-api`, `kv-storage-rocksdb` | Implemented as stored-record metadata |
 | At Scale: compaction debt | `kv-storage-rocksdb`, `kv-storage-toy-lsm`, `kv-bench` | RocksDB dependency in place; storage metrics planned |
 | At Scale: deterministic simulation | `kv-simulator` | Planned |
@@ -87,6 +87,7 @@ When the guide claims a mechanism exists, this companion must point to the file 
 - `kv-repair/src/main/java/com/hkg/kv/repair/MerkleRepairLease.java` models ownership, fencing token, acquire time, and expiry for one repair task lease.
 - `kv-repair/src/main/java/com/hkg/kv/repair/MerkleRepairLeaseStore.java` defines the lease backend boundary for acquiring, releasing, and inspecting repair task leases.
 - `kv-repair/src/main/java/com/hkg/kv/repair/InMemoryMerkleRepairLeaseStore.java` provides a deterministic in-memory implementation of lease acquire/expiry/release semantics for tests and local simulation.
+- `kv-repair/src/main/java/com/hkg/kv/repair/JdbcMerkleRepairLeaseStore.java` provides a PostgreSQL-shaped durable lease backend using JDBC transactions, row locks, active/inactive rows, and per-task fencing tokens.
 - `kv-repair/src/main/java/com/hkg/kv/repair/LeasedMerkleRepairScheduler.java` wraps `MerkleRepairScheduler`, acquiring a lease before running a due task and releasing it after the attempt.
 - `kv-repair/src/test/java/com/hkg/kv/repair/FileHintStoreTest.java` verifies persistence across instances, delivery removal, and failed-attempt metadata replacement.
 - `kv-repair/src/test/java/com/hkg/kv/repair/HintedHandoffPlannerTest.java` verifies failed replica hint creation and rejects responses outside the replication plan.
@@ -101,4 +102,5 @@ When the guide claims a mechanism exists, this companion must point to the file 
 - `kv-repair/src/test/java/com/hkg/kv/repair/MerkleRepairSchedulerTest.java` verifies due repair execution, clean/incomplete rescheduling, task-per-tick deferral, missing-replica backoff, failed-task isolation, and aggregate repair summaries.
 - `kv-repair/src/test/java/com/hkg/kv/repair/RemoteMerkleRepairExecutorTest.java` verifies streamed missing-record repair, stale-version repair, wrong-node write response accounting, write-budget stops, and streamed-record range validation.
 - `kv-repair/src/test/java/com/hkg/kv/repair/InMemoryMerkleRepairLeaseStoreTest.java` verifies lease acquisition, lease contention, expiry takeover with higher fencing token, and release-by-matching-token semantics.
+- `kv-repair/src/test/java/com/hkg/kv/repair/JdbcMerkleRepairLeaseStoreTest.java` verifies schema initialization, cross-instance lease contention, expired lease takeover, owner/token release protection, and monotonic fencing tokens after release.
 - `kv-repair/src/test/java/com/hkg/kv/repair/LeasedMerkleRepairSchedulerTest.java` verifies lease acquisition/release around successful repair, lease-held skip behavior, expired-lease takeover, and task-budget deferral without lease acquisition.

@@ -69,6 +69,7 @@ project(':kv-repair') {
         api project(':kv-partitioning')
         api project(':kv-storage-api')
         implementation project(':kv-replication')
+        testImplementation 'com.h2database:h2:2.2.224'
     }
 }
 

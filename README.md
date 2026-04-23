@@ -6,7 +6,7 @@ The project target is a Dynamo/Cassandra-style leaderless AP store with tunable 
 
 ## Current Scope
 
-This repository is at checkpoint 13: durable single-node storage, Phase 2 partitioning, bounded Phase 3 write/read replication primitives, and Phase 4 convergence primitives for hinted handoff, read repair execution, Merkle anti-entropy repair execution, repair backpressure, convergence metric export, deterministic Merkle repair scheduling, transport-agnostic Merkle range streaming, and repair leases.
+This repository is at checkpoint 14: durable single-node storage, Phase 2 partitioning, bounded Phase 3 write/read replication primitives, and Phase 4 convergence primitives for hinted handoff, read repair execution, Merkle anti-entropy repair execution, repair backpressure, convergence metric export, deterministic Merkle repair scheduling, transport-agnostic Merkle range streaming, and durable repair leases.
 
 Implemented:
 - `StorageEngine` contract.
@@ -41,8 +41,9 @@ Implemented:
 - Merkle repair scheduler that runs due replica-pair range tasks, limits tasks per tick, reschedules clean/incomplete runs, captures missing-replica/failed-task outcomes, and returns aggregate repair results.
 - Transport-agnostic Merkle range streaming boundary and remote repair executor that streams range records from replica nodes and writes repair mutations through `ReplicaWriter`.
 - Merkle repair lease contract, in-memory lease store with fencing tokens, and lease-guarded scheduler that skips tasks already owned by another worker.
+- JDBC-backed Merkle repair lease store with PostgreSQL-shaped schema initialization, row-level locking, active/inactive lease rows, and monotonic per-task fencing tokens across release/reacquire cycles.
 
-Concrete HTTP/gRPC transport, timeout budgets, durable lease backend, Micrometer/Prometheus binding, and node-runtime integration come next.
+Concrete HTTP/gRPC transport, timeout budgets, runtime datasource wiring, Micrometer/Prometheus binding, and node-runtime integration come next.
 
 ## Planned Local Runtime
 
