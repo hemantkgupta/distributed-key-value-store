@@ -2,6 +2,8 @@ package com.hkg.kv.node;
 
 import com.hkg.kv.partitioning.ClusterNode;
 import com.hkg.kv.repair.FileHintStore;
+import com.hkg.kv.repair.HintReplaySummary;
+import com.hkg.kv.repair.HintReplayWorker;
 import com.hkg.kv.repair.HintStore;
 import com.hkg.kv.repair.HintedHandoffPlanner;
 import com.hkg.kv.repair.HintedHandoffService;
@@ -19,8 +21,11 @@ import java.net.http.HttpClient;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 public final class KvNodeRuntime implements AutoCloseable {
     private final KvNodeConfig config;
@@ -31,6 +36,9 @@ public final class KvNodeRuntime implements AutoCloseable {
     private final CoordinatorService coordinatorService;
     private final HttpServer server;
     private final ExecutorService requestExecutor;
+    private final ScheduledExecutorService maintenanceExecutor;
+    private final HintReplayWorker hintReplayWorker;
+    private final AtomicReference<HintReplaySummary> lastHintReplaySummary;
     private final ClusterNode localNode;
     private final AtomicBoolean closed;
 
@@ -43,6 +51,9 @@ public final class KvNodeRuntime implements AutoCloseable {
             CoordinatorService coordinatorService,
             HttpServer server,
             ExecutorService requestExecutor,
+            ScheduledExecutorService maintenanceExecutor,
+            HintReplayWorker hintReplayWorker,
+            AtomicReference<HintReplaySummary> lastHintReplaySummary,
             ClusterNode localNode
     ) {
         this.config = config;
@@ -53,6 +64,9 @@ public final class KvNodeRuntime implements AutoCloseable {
         this.coordinatorService = coordinatorService;
         this.server = server;
         this.requestExecutor = requestExecutor;
+        this.maintenanceExecutor = maintenanceExecutor;
+        this.hintReplayWorker = hintReplayWorker;
+        this.lastHintReplaySummary = lastHintReplaySummary;
         this.localNode = localNode;
         this.closed = new AtomicBoolean(false);
     }
@@ -65,12 +79,14 @@ public final class KvNodeRuntime implements AutoCloseable {
         StorageEngine storage = null;
         HttpServer server = null;
         ExecutorService requestExecutor = null;
+        ScheduledExecutorService maintenanceExecutor = null;
         try {
             storage = RocksDbStorageEngine.open(config.storagePath());
             MerkleRepairLeaseStore repairLeaseStore = new RepairLeaseStoreFactory()
                     .create(config.repairLeaseStoreConfig());
             server = HttpServer.create(new InetSocketAddress(config.host(), config.port()), 0);
             requestExecutor = Executors.newCachedThreadPool(threadFactory(config));
+            maintenanceExecutor = Executors.newSingleThreadScheduledExecutor(maintenanceThreadFactory(config));
             server.setExecutor(requestExecutor);
 
             HttpReplicaTransportHandlers handlers = new HttpReplicaTransportHandlers(config.nodeId(), storage);
@@ -100,6 +116,22 @@ public final class KvNodeRuntime implements AutoCloseable {
                     transportClient,
                     new HintedHandoffPlanner(new HintedHandoffService(hintStore))
             );
+            HintReplayWorker hintReplayWorker = new HintReplayWorker(
+                    hintStore,
+                    new RuntimeHintDelivery(coordinatorService.clusterNodes(), transportClient),
+                    config.hintReplayConfig().policy(),
+                    java.time.Clock.systemUTC()
+            );
+            AtomicReference<HintReplaySummary> lastHintReplaySummary = new AtomicReference<>(emptyHintReplaySummary());
+            if (config.hintReplayConfig().enabled()) {
+                long intervalMillis = config.hintReplayConfig().interval().toMillis();
+                maintenanceExecutor.scheduleWithFixedDelay(
+                        () -> replayHintsSafely(hintReplayWorker, lastHintReplaySummary),
+                        0L,
+                        intervalMillis,
+                        TimeUnit.MILLISECONDS
+                );
+            }
             HttpCoordinatorHandlers coordinatorHandlers = new HttpCoordinatorHandlers(coordinatorService);
             server.createContext(HttpCoordinatorPaths.COORDINATOR_WRITE_PATH, coordinatorHandlers.coordinatorWriteHandler());
             server.createContext(HttpCoordinatorPaths.COORDINATOR_READ_PATH, coordinatorHandlers.coordinatorReadHandler());
@@ -112,6 +144,9 @@ public final class KvNodeRuntime implements AutoCloseable {
                     coordinatorService,
                     server,
                     requestExecutor,
+                    maintenanceExecutor,
+                    hintReplayWorker,
+                    lastHintReplaySummary,
                     localNode
             );
         } catch (IOException | RuntimeException exception) {
@@ -120,6 +155,9 @@ public final class KvNodeRuntime implements AutoCloseable {
             }
             if (requestExecutor != null) {
                 requestExecutor.shutdownNow();
+            }
+            if (maintenanceExecutor != null) {
+                maintenanceExecutor.shutdownNow();
             }
             if (storage != null) {
                 storage.close();
@@ -161,6 +199,16 @@ public final class KvNodeRuntime implements AutoCloseable {
         return coordinatorService;
     }
 
+    public HintReplaySummary replayHintsNow() {
+        HintReplaySummary summary = hintReplayWorker.replayDueHints();
+        lastHintReplaySummary.set(summary);
+        return summary;
+    }
+
+    public HintReplaySummary lastHintReplaySummary() {
+        return lastHintReplaySummary.get();
+    }
+
     public ReplicaWriter replicaWriter() {
         return transportClient;
     }
@@ -179,6 +227,7 @@ public final class KvNodeRuntime implements AutoCloseable {
             return;
         }
         server.stop(0);
+        maintenanceExecutor.shutdownNow();
         requestExecutor.shutdownNow();
         storage.close();
     }
@@ -190,5 +239,29 @@ public final class KvNodeRuntime implements AutoCloseable {
             thread.setName("kv-node-" + config.nodeId().value() + "-http");
             return thread;
         };
+    }
+
+    private static ThreadFactory maintenanceThreadFactory(KvNodeConfig config) {
+        return runnable -> {
+            Thread thread = new Thread(runnable);
+            thread.setDaemon(true);
+            thread.setName("kv-node-" + config.nodeId().value() + "-maintenance");
+            return thread;
+        };
+    }
+
+    private static HintReplaySummary emptyHintReplaySummary() {
+        return new HintReplaySummary(0, 0, 0, 0, 0);
+    }
+
+    private static void replayHintsSafely(
+            HintReplayWorker hintReplayWorker,
+            AtomicReference<HintReplaySummary> lastHintReplaySummary
+    ) {
+        try {
+            lastHintReplaySummary.set(hintReplayWorker.replayDueHints());
+        } catch (RuntimeException exception) {
+            // Keep the maintenance loop alive; the next tick will retry outstanding hints.
+        }
     }
 }

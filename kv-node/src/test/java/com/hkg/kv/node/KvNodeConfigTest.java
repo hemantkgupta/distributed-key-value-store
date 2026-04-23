@@ -28,6 +28,7 @@ class KvNodeConfigTest {
         assertThat(config.requestTimeout()).isEqualTo(KvNodeConfig.DEFAULT_REQUEST_TIMEOUT);
         assertThat(config.repairLeaseStoreConfig()).isEqualTo(RepairLeaseStoreConfig.inMemory());
         assertThat(config.coordinatorConfig()).isEqualTo(CoordinatorConfig.localOnly());
+        assertThat(config.hintReplayConfig()).isEqualTo(HintReplayConfig.defaults());
     }
 
     @Test
@@ -65,6 +66,10 @@ class KvNodeConfigTest {
         properties.setProperty(CoordinatorConfig.VNODE_COUNT_PROPERTY, "48");
         properties.setProperty(CoordinatorConfig.RING_EPOCH_PROPERTY, "9");
         properties.setProperty(CoordinatorConfig.HINT_STORE_PATH_PROPERTY, tempDir.resolve("pending-hints.log").toString());
+        properties.setProperty(HintReplayConfig.ENABLED_PROPERTY, "false");
+        properties.setProperty(HintReplayConfig.INTERVAL_PROPERTY, "PT2S");
+        properties.setProperty(HintReplayConfig.INITIAL_BACKOFF_PROPERTY, "PT3S");
+        properties.setProperty(HintReplayConfig.MAX_BACKOFF_PROPERTY, "PT30S");
 
         KvNodeConfig config = KvNodeConfig.fromProperties(properties);
 
@@ -74,6 +79,10 @@ class KvNodeConfigTest {
         assertThat(config.coordinatorConfig().ringEpoch()).isEqualTo(9L);
         assertThat(config.coordinatorConfig().resolveHintStorePath(tempDir.resolve("other")))
                 .isEqualTo(tempDir.resolve("pending-hints.log"));
+        assertThat(config.hintReplayConfig().enabled()).isFalse();
+        assertThat(config.hintReplayConfig().interval()).isEqualTo(Duration.ofSeconds(2));
+        assertThat(config.hintReplayConfig().policy().initialBackoff()).isEqualTo(Duration.ofSeconds(3));
+        assertThat(config.hintReplayConfig().policy().maxBackoff()).isEqualTo(Duration.ofSeconds(30));
     }
 
     @Test
@@ -96,5 +105,17 @@ class KvNodeConfigTest {
         assertThatThrownBy(() -> KvNodeConfig.fromProperties(properties))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("invalid request timeout");
+    }
+
+    @Test
+    void rejectsInvalidHintReplayDuration() {
+        Properties properties = new Properties();
+        properties.setProperty(KvNodeConfig.NODE_ID_PROPERTY, "node-a");
+        properties.setProperty(KvNodeConfig.STORAGE_PATH_PROPERTY, tempDir.resolve("rocksdb").toString());
+        properties.setProperty(HintReplayConfig.INTERVAL_PROPERTY, "every-second");
+
+        assertThatThrownBy(() -> KvNodeConfig.fromProperties(properties))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining(HintReplayConfig.INTERVAL_PROPERTY);
     }
 }

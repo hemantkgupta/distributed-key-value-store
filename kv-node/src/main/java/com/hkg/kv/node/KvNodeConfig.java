@@ -13,7 +13,8 @@ public record KvNodeConfig(
         Path storagePath,
         Duration requestTimeout,
         RepairLeaseStoreConfig repairLeaseStoreConfig,
-        CoordinatorConfig coordinatorConfig
+        CoordinatorConfig coordinatorConfig,
+        HintReplayConfig hintReplayConfig
 ) {
     public static final String NODE_ID_PROPERTY = "kv.node.id";
     public static final String HOST_PROPERTY = "kv.node.host";
@@ -47,6 +48,9 @@ public record KvNodeConfig(
         if (coordinatorConfig == null) {
             throw new IllegalArgumentException("coordinator config must not be null");
         }
+        if (hintReplayConfig == null) {
+            throw new IllegalArgumentException("hint replay config must not be null");
+        }
     }
 
     public static KvNodeConfig fromProperties(Properties properties) {
@@ -60,7 +64,8 @@ public record KvNodeConfig(
                 Path.of(requiredProperty(properties, STORAGE_PATH_PROPERTY)),
                 parseDuration(properties.getProperty(REQUEST_TIMEOUT_PROPERTY, DEFAULT_REQUEST_TIMEOUT.toString())),
                 RepairLeaseStoreConfig.fromProperties(properties),
-                CoordinatorConfig.fromProperties(properties)
+                CoordinatorConfig.fromProperties(properties),
+                HintReplayConfig.fromProperties(properties)
         );
     }
 

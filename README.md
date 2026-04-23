@@ -6,7 +6,7 @@ The project target is a Dynamo/Cassandra-style leaderless AP store with tunable 
 
 ## Current Scope
 
-This repository is at checkpoint 19: durable single-node storage, Phase 2 partitioning, bounded Phase 3 write/read replication primitives, and Phase 4 convergence primitives for hinted handoff, read repair execution, Merkle anti-entropy repair execution, repair backpressure, convergence metric export, deterministic Merkle repair scheduling, concrete HTTP transport for replica/repair flows, durable repair leases, node-side lease backend wiring, an embedded HTTP node runtime, ring-driven coordinator planning, and coordinator-side durable hint recording.
+This repository is at checkpoint 20: durable single-node storage, Phase 2 partitioning, bounded Phase 3 write/read replication primitives, and Phase 4 convergence primitives for hinted handoff, read repair execution, Merkle anti-entropy repair execution, repair backpressure, convergence metric export, deterministic Merkle repair scheduling, concrete HTTP transport for replica/repair flows, durable repair leases, node-side lease backend wiring, an embedded HTTP node runtime, ring-driven coordinator planning, coordinator-side durable hint recording, and runtime-owned hint replay scheduling.
 
 Implemented:
 - `StorageEngine` contract.
@@ -26,6 +26,7 @@ Implemented:
 - Local-datacenter-aware `LOCAL_QUORUM` acknowledgement filtering.
 - File-backed hinted-handoff store plus planner for recording failed replica writes as durable hints.
 - Hint replay worker with exponential backoff scheduling and delivery removal.
+- Runtime hint-delivery adapter plus scheduled node-maintenance loop for replaying due hints through the configured replica transport.
 - Digest read coordinator that fans reads to planned replicas and identifies digest disagreement.
 - Read repair planner that selects the newest returned record and targets stale successful replicas.
 - Read repair executor that applies the latest returned record through the replica write boundary.
@@ -46,8 +47,9 @@ Implemented:
 - Concrete HTTP client/handler transport in `kv-node` for replica writes, digest/full reads, and streamed Merkle range repair using binary request/response payloads over JDK `HttpClient` and `HttpHandler`.
 - Property-backed embedded `kv-node` runtime that opens RocksDB storage, starts a JDK `HttpServer`, registers fixed replica/repair endpoints, returns the actual bound `ClusterNode`, and wires the selected repair lease backend into one lifecycle.
 - Coordinator config, replica planners, service, client, and HTTP handlers in `kv-node` that route external write/read requests across configured cluster nodes, optionally derive per-key replica plans from the consistent-hash ring, persist durable hints for failed planned replicas, allow `ANY` writes to succeed via coordinator-side hint recording, and run opportunistic read repair on digest mismatch.
+- `kv-node` hint replay config plus a runtime-owned maintenance loop that maps due hints back to configured cluster nodes, replays them through the existing HTTP replica writer, and exposes an explicit `replayHintsNow()` hook for tests and future admin flows.
 
-Hint replay scheduling in the runtime, repair tick orchestration, Micrometer/Prometheus binding, repair task persistence, Docker Compose/GKE runtime packaging, and a gRPC alternative come next.
+Request timeout budgets, sloppy-quorum substitute-node selection, repair tick orchestration, Micrometer/Prometheus binding, repair task persistence, Docker Compose/GKE runtime packaging, and a gRPC alternative come next.
 
 Node runtime properties:
 
@@ -58,6 +60,15 @@ Node runtime properties:
 | `kv.node.port` | `8080` | HTTP bind port; use `0` for an ephemeral test port |
 | `kv.node.storage.rocksdb.path` | none | Local RocksDB directory for this node |
 | `kv.node.http.request-timeout` | `PT5S` | Outbound replica/repair HTTP timeout |
+
+Hint replay runtime properties:
+
+| Property | Default | Meaning |
+|---|---|---|
+| `kv.node.hints.replay.enabled` | `true` | Whether the embedded runtime should replay due durable hints on its maintenance loop |
+| `kv.node.hints.replay.interval` | `PT1S` | Fixed delay between runtime hint replay passes |
+| `kv.node.hints.replay.initial-backoff` | `PT1S` | First retry delay applied when hint delivery fails |
+| `kv.node.hints.replay.max-backoff` | `PT5M` | Upper bound for exponential hint replay backoff |
 
 Coordinator routing properties:
 
