@@ -43,6 +43,16 @@ public record MerkleRepairTaskResult(
         );
     }
 
+    public static MerkleRepairTaskResult leaseNotAcquired(MerkleRepairTask task) {
+        return new MerkleRepairTaskResult(
+                task,
+                task,
+                MerkleRepairTaskStatus.LEASE_NOT_ACQUIRED,
+                MerkleRepairResult.empty(),
+                "repair task lease is held by another worker"
+        );
+    }
+
     public static MerkleRepairTaskResult missingReplica(MerkleRepairTask task, MerkleRepairTask nextTask) {
         return new MerkleRepairTaskResult(
                 task,
@@ -91,6 +101,7 @@ public record MerkleRepairTaskResult(
 
     public boolean wasAttempted() {
         return status != MerkleRepairTaskStatus.NOT_DUE
-                && status != MerkleRepairTaskStatus.DEFERRED_BY_TASK_BUDGET;
+                && status != MerkleRepairTaskStatus.DEFERRED_BY_TASK_BUDGET
+                && status != MerkleRepairTaskStatus.LEASE_NOT_ACQUIRED;
     }
 }

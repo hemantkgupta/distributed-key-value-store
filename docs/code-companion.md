@@ -10,7 +10,7 @@ This file maps the future Complete Engineering Guide sections to code locations.
 | Foundation: write/read path | `kv-replication` | In-process write fanout, retries, local-quorum filtering, and digest-read fanout implemented |
 | Going Deeper: hinted handoff | `kv-repair` | Durable hint store, failed-write planner, replay/backoff worker, and metrics counters implemented |
 | Going Deeper: digest reads and read repair | `kv-storage-api`, `kv-storage-rocksdb`, `kv-replication`, `kv-repair` | Digest read result analysis, read-repair planning, write-boundary execution, and metrics counters implemented |
-| Going Deeper: Merkle anti-entropy | `kv-storage-api`, `kv-storage-rocksdb`, `kv-partitioning`, `kv-replication`, `kv-repair` | Storage-backed tree construction, differing-range planning, local repair execution, per-run backpressure budgets, deterministic due-task scheduling, transport-agnostic range streaming, and metric samples implemented; concrete network transport/distributed leases planned |
+| Going Deeper: Merkle anti-entropy | `kv-storage-api`, `kv-storage-rocksdb`, `kv-partitioning`, `kv-replication`, `kv-repair` | Storage-backed tree construction, differing-range planning, local repair execution, per-run backpressure budgets, deterministic due-task scheduling, transport-agnostic range streaming, lease-guarded scheduling, and metric samples implemented; concrete network transport/durable lease backend planned |
 | Going Deeper: tombstones and TTL | `kv-storage-api`, `kv-storage-rocksdb` | Implemented as stored-record metadata |
 | At Scale: compaction debt | `kv-storage-rocksdb`, `kv-storage-toy-lsm`, `kv-bench` | RocksDB dependency in place; storage metrics planned |
 | At Scale: deterministic simulation | `kv-simulator` | Planned |
@@ -84,6 +84,10 @@ When the guide claims a mechanism exists, this companion must point to the file 
 - `kv-repair/src/main/java/com/hkg/kv/repair/MerkleRepairScheduleSummary.java` reports per-task statuses, next tasks, aggregate repair results, and budget-stop counts.
 - `kv-repair/src/main/java/com/hkg/kv/repair/MerkleRangeStreamer.java` abstracts transport-specific streaming of stored records for one token range from one `ClusterNode`.
 - `kv-repair/src/main/java/com/hkg/kv/repair/RemoteMerkleRepairExecutor.java` repairs streamed replica ranges by comparing returned records and writing repair mutations through `ReplicaWriter`.
+- `kv-repair/src/main/java/com/hkg/kv/repair/MerkleRepairLease.java` models ownership, fencing token, acquire time, and expiry for one repair task lease.
+- `kv-repair/src/main/java/com/hkg/kv/repair/MerkleRepairLeaseStore.java` defines the lease backend boundary for acquiring, releasing, and inspecting repair task leases.
+- `kv-repair/src/main/java/com/hkg/kv/repair/InMemoryMerkleRepairLeaseStore.java` provides a deterministic in-memory implementation of lease acquire/expiry/release semantics for tests and local simulation.
+- `kv-repair/src/main/java/com/hkg/kv/repair/LeasedMerkleRepairScheduler.java` wraps `MerkleRepairScheduler`, acquiring a lease before running a due task and releasing it after the attempt.
 - `kv-repair/src/test/java/com/hkg/kv/repair/FileHintStoreTest.java` verifies persistence across instances, delivery removal, and failed-attempt metadata replacement.
 - `kv-repair/src/test/java/com/hkg/kv/repair/HintedHandoffPlannerTest.java` verifies failed replica hint creation and rejects responses outside the replication plan.
 - `kv-repair/src/test/java/com/hkg/kv/repair/HintReplayWorkerTest.java` verifies delivered hint deletion, failed hint rescheduling, not-due skipping, and delivery exception handling.
@@ -96,3 +100,5 @@ When the guide claims a mechanism exists, this companion must point to the file 
 - `kv-repair/src/test/java/com/hkg/kv/repair/MerkleRepairExecutorTest.java` verifies missing-record repair, stale-version repair, tombstone repair, no-op plans, failed write accounting, equal-version divergence handling, and range/scan/write budget stops.
 - `kv-repair/src/test/java/com/hkg/kv/repair/MerkleRepairSchedulerTest.java` verifies due repair execution, clean/incomplete rescheduling, task-per-tick deferral, missing-replica backoff, failed-task isolation, and aggregate repair summaries.
 - `kv-repair/src/test/java/com/hkg/kv/repair/RemoteMerkleRepairExecutorTest.java` verifies streamed missing-record repair, stale-version repair, wrong-node write response accounting, write-budget stops, and streamed-record range validation.
+- `kv-repair/src/test/java/com/hkg/kv/repair/InMemoryMerkleRepairLeaseStoreTest.java` verifies lease acquisition, lease contention, expiry takeover with higher fencing token, and release-by-matching-token semantics.
+- `kv-repair/src/test/java/com/hkg/kv/repair/LeasedMerkleRepairSchedulerTest.java` verifies lease acquisition/release around successful repair, lease-held skip behavior, expired-lease takeover, and task-budget deferral without lease acquisition.

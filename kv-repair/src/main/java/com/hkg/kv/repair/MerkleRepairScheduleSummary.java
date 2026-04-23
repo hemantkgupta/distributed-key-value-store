@@ -42,6 +42,10 @@ public record MerkleRepairScheduleSummary(List<MerkleRepairTaskResult> taskResul
         return count(MerkleRepairTaskStatus.DEFERRED_BY_TASK_BUDGET);
     }
 
+    public int leaseNotAcquiredTasks() {
+        return count(MerkleRepairTaskStatus.LEASE_NOT_ACQUIRED);
+    }
+
     public int missingReplicaTasks() {
         return count(MerkleRepairTaskStatus.MISSING_REPLICA);
     }
